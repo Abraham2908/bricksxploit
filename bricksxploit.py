@@ -15,12 +15,12 @@ sys.path.insert(0, current_dir)
 # Importações absolutas
 from core.auth import save_credentials
 from core.report import validate_and_notify, generate_and_send_report
-from menu_modern import show_menu
+from menu_simple import show_menu
 from utils.storage import load_config
-from utils.ui_modern import ModernUI
+from utils.ui_simple import SimpleUI
 
-# Inicializar a interface moderna
-ui = ModernUI(title="BricksXploit", version="1.0.0")
+# Inicializar a interface simplificada
+ui = SimpleUI(title="BricksXploit", version="1.0.0")
 console = Console()
 
 def main():
