@@ -35,11 +35,11 @@ def show_menu(config):
     """
     # Define main menu items
     menu_items = [
-        "Profile Management",
-        "Scan Workspace",
-        "Run SQL Query",
-        "Generate Reports",
-        "View Results",
+        "Profile",
+        "Scan",
+        "Run Statement",
+        "Reports",
+        "Results",
         "Configuration",
         "Validate Credentials",
         "Exit"
@@ -110,7 +110,7 @@ def profile_menu(config):
     while True:
         # Update the screen
         ui.update_screen(
-            "Profile Management",
+            "Profile",
             menu_items,
             Text("Profile Management: Manage Databricks workspace profiles.")
         )
@@ -188,7 +188,7 @@ def display_profiles():
     
     # Update the screen
     ui.update_screen(
-        "Profile Management",
+        "Profile",
         menu_items,
         table
     )
@@ -231,7 +231,7 @@ def switch_profile_ui():
     
     # Update the screen
     ui.update_screen(
-        "Profile Management",
+        "Profile",
         menu_items,
         table
     )
@@ -273,7 +273,7 @@ def add_profile_ui():
     
     # Update the screen
     ui.update_screen(
-        "Profile Management",
+        "Profile",
         menu_items,
         Text("Add Profile: Add a new Databricks workspace profile.")
     )
@@ -364,7 +364,7 @@ def remove_profile_ui():
     
     # Update the screen
     ui.update_screen(
-        "Profile Management",
+        "Profile",
         menu_items,
         table
     )
@@ -447,7 +447,7 @@ def view_current_profile():
     
     # Update the screen
     ui.update_screen(
-        "Profile Management",
+        "Profile",
         menu_items,
         table
     )

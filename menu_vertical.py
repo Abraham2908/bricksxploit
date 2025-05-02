@@ -14,7 +14,7 @@ sys.path.insert(0, current_dir)
 # Importações absolutas
 from core.auth import validate_credentials
 from core.profiles import list_profiles, switch_profile, add_new_profile
-from core.report import validate_and_notify, generate_and_send_report
+from core.report import validate_and_notify
 from core.scan import run_full_scan, run_targeted_scan
 from core.export import export_scan_results, export_report
 from utils.storage import save_config, get_webhook_url, set_webhook_url
@@ -33,11 +33,11 @@ def show_menu(config):
     """
     # Define main menu items
     menu_items = [
-        "Profile Management",
-        "Scan Workspace",
+        "Profile",
+        "Scan",
         "Run SQL Query",
-        "Generate Reports",
-        "View Results",
+        "Reports",
+        "Results",
         "Configuration",
         "Validate Credentials",
         "Exit"
@@ -137,11 +137,11 @@ def profile_menu(_):
             # Back to main menu
             # Define main menu items again to ensure they're displayed correctly
             main_menu_items = [
-                "Profile Management",
-                "Scan Workspace",
+                "Profile",
+                "Scan",
                 "Run SQL Query",
-                "Generate Reports",
-                "View Results",
+                "Reports",
+                "Results",
                 "Configuration",
                 "Validate Credentials",
                 "Exit"
@@ -443,11 +443,11 @@ def validate_menu(_):
     if ui.confirm("Return to main menu?", default=False):
         # Define main menu items again to ensure they're displayed correctly
         main_menu_items = [
-            "Profile Management",
-            "Scan Workspace",
+            "Profile",
+            "Scan",
             "Run SQL Query",
-            "Generate Reports",
-            "View Results",
+            "Reports",
+            "Results",
             "Configuration",
             "Validate Credentials",
             "Exit"
@@ -580,11 +580,11 @@ def config_menu(_):
             # Back to main menu
             # Define main menu items again to ensure they're displayed correctly
             main_menu_items = [
-                "Profile Management",
-                "Scan Workspace",
+                "Profile",
+                "Scan",
                 "Run SQL Query",
-                "Generate Reports",
-                "View Results",
+                "Reports",
+                "Results",
                 "Configuration",
                 "Validate Credentials",
                 "Exit"
@@ -726,11 +726,11 @@ def scan_menu(_):
             # Back to main menu
             # Define main menu items again to ensure they're displayed correctly
             main_menu_items = [
-                "Profile Management",
-                "Scan Workspace",
+                "Profile",
+                "Scan",
                 "Run SQL Query",
-                "Generate Reports",
-                "View Results",
+                "Reports",
+                "Results",
                 "Configuration",
                 "Validate Credentials",
                 "Exit"
@@ -743,7 +743,7 @@ def scan_menu(_):
 
 def run_workspace_scan(scan_type):
     """
-    Run a workspace scan
+    Run a workspace scan with real-time updates in the UI
 
     Args:
         scan_type (str): Type of scan to run (full, users, catalogs, secrets, warehouses)
@@ -784,27 +784,236 @@ def run_workspace_scan(scan_type):
     # Ask if user wants to send results to Discord
     send_to_discord = ui.confirm("Send scan results to Discord?", default=False)
 
-    # Run the scan
+    # Create a progress table to show real-time scan status
+    progress_table = ui.create_table(title=f"{display_name} Scan: {workspace}")
+    progress_table.add_column("Resource", style="cyan")
+    progress_table.add_column("Status", style="green")
+    progress_table.add_column("Count", style="yellow")
+
+    # Initialize the progress table with expected resources based on scan type
+    if scan_type == "full":
+        resources_to_scan = [
+            "Users", "Groups", "Clusters", "Jobs", "Secret Scopes",
+            "SQL Warehouses", "Catalogs", "Schemas", "Tables",
+            "Instance Pools", "External Locations", "Tokens"
+        ]
+    elif scan_type == "users":
+        resources_to_scan = ["Users", "Groups"]
+    elif scan_type == "catalogs":
+        resources_to_scan = ["Catalogs", "Schemas", "Tables"]
+    elif scan_type == "secrets":
+        resources_to_scan = ["Secret Scopes", "Secrets"]
+    elif scan_type == "warehouses":
+        resources_to_scan = ["SQL Warehouses"]
+    else:
+        resources_to_scan = [scan_type.replace("_", " ").title()]
+
+    # Add rows for each resource to be scanned
+    for resource in resources_to_scan:
+        progress_table.add_row(resource, "Pending", "0")
+
+    # Display initial progress
     ui.add_notification(f"Starting {display_name} scan on {workspace}...", "INFO")
-    ui.display(Text(f"Starting {display_name} scan on {workspace}...\nThis may take a while depending on the size of your workspace.", style="cyan"), selected_option="2")
+    ui.display(progress_table, selected_option="2")
+
+    # Create a callback function to update the UI during scan
+    def update_scan_progress(resource_type, status, count=None):
+        # Update the progress table
+        try:
+            # Find the row with the matching resource type
+            for row_index, row in enumerate(progress_table.rows):
+                # Check if the row is a tuple and has at least one element
+                if isinstance(row, tuple) and len(row) > 0:
+                    # Check if the first element has a 'plain' attribute
+                    if hasattr(row[0], 'plain') and row[0].plain == resource_type:
+                        progress_table.rows[row_index] = (
+                            row[0],  # Keep the resource name
+                            Text(status, style="green" if status == "Complete" else "yellow"),
+                            Text(str(count) if count is not None else "0", style="yellow")
+                        )
+                        break
+                # Alternative approach if rows are not tuples
+                elif hasattr(row, 'cells') and len(row.cells) > 0:
+                    cell_text = str(row.cells[0])
+                    if resource_type in cell_text:
+                        # Use the table's add_row method to update
+                        # First, remove the old row
+                        progress_table.rows.pop(row_index)
+                        # Then add the new row at the same position
+                        new_row = [
+                            Text(resource_type, style="cyan"),
+                            Text(status, style="green" if status == "Complete" else "yellow"),
+                            Text(str(count) if count is not None else "0", style="yellow")
+                        ]
+                        progress_table.rows.insert(row_index, new_row)
+                        break
+        except Exception as e:
+            # If there's an error updating the table, log it but don't crash
+            ui.add_notification(f"Error updating progress table: {str(e)}", "WARNING")
+
+        # Update the UI with notification regardless of table update success
+        ui.add_notification(f"{resource_type}: {status} {f'({count} found)' if count else ''}", "INFO")
+        ui.display(progress_table, selected_option="2")
 
     try:
+        # Run the scan with progress updates
         if scan_type == "full":
-            # Run full scan
+            # For full scan, we'll use a custom wrapper to update progress
+            def full_scan_with_updates():
+                # Update initial status
+                for resource in resources_to_scan:
+                    update_scan_progress(resource, "Pending")
+
+                # Run the actual scan
+                scan_results = run_full_scan(workspace, profile_data)
+
+                # Ensure scan_type is included in the results for Discord notifications
+                if scan_results and isinstance(scan_results, dict):
+                    scan_results["scan_type"] = "full"
+
+                # Update final status for each resource
+                if scan_results and "resources" in scan_results:
+                    resources = scan_results["resources"]
+
+                    # Update users
+                    if "users" in resources:
+                        update_scan_progress("Users", "Complete", len(resources["users"]))
+
+                    # Update groups
+                    if "groups" in resources:
+                        update_scan_progress("Groups", "Complete", len(resources["groups"]))
+
+                    # Update clusters
+                    if "clusters" in resources:
+                        update_scan_progress("Clusters", "Complete", len(resources["clusters"]))
+
+                    # Update jobs
+                    if "jobs" in resources:
+                        update_scan_progress("Jobs", "Complete", len(resources["jobs"]))
+
+                    # Update secret scopes
+                    if "secret_scopes" in resources:
+                        update_scan_progress("Secret Scopes", "Complete", len(resources["secret_scopes"]))
+
+                    # Update SQL warehouses
+                    if "warehouses" in resources:
+                        update_scan_progress("SQL Warehouses", "Complete", len(resources["warehouses"]))
+
+                    # Update catalogs
+                    if "catalogs" in resources:
+                        update_scan_progress("Catalogs", "Complete", len(resources["catalogs"]))
+
+                    # Update schemas
+                    if "schemas" in resources:
+                        schema_count = 0
+                        for catalog_schemas in resources["schemas"].values():
+                            schema_count += len(catalog_schemas)
+                        update_scan_progress("Schemas", "Complete", schema_count)
+
+                    # Update tables
+                    if "tables" in resources:
+                        table_count = 0
+                        for schema_tables in resources["tables"].values():
+                            table_count += len(schema_tables)
+                        update_scan_progress("Tables", "Complete", table_count)
+
+                    # Update instance pools
+                    if "instance_pools" in resources:
+                        update_scan_progress("Instance Pools", "Complete", len(resources["instance_pools"]))
+
+                    # Update external locations
+                    if "external_locations" in resources:
+                        update_scan_progress("External Locations", "Complete", len(resources["external_locations"]))
+
+                    # Update tokens
+                    if "tokens" in resources:
+                        update_scan_progress("Tokens", "Complete", len(resources["tokens"]))
+
+                return scan_results
+
+            # Run the full scan with progress updates
             scan_results = ui.run_with_spinner(
                 f"Running full workspace scan on {workspace}...",
-                run_full_scan,
-                workspace,
-                profile_data
+                full_scan_with_updates
             )
         else:
-            # Run targeted scan
+            # For targeted scans, we'll use a custom wrapper to update progress
+            def targeted_scan_with_updates():
+                # Update initial status
+                for resource in resources_to_scan:
+                    update_scan_progress(resource, "Pending")
+
+                # Run the actual scan
+                scan_results = run_targeted_scan(workspace, profile_data, scan_type)
+
+                # Ensure scan_type is included in the results for Discord notifications
+                if scan_results and isinstance(scan_results, dict):
+                    scan_results["scan_type"] = scan_type
+
+                # Update final status for each resource
+                if scan_results and "resources" in scan_results:
+                    resources = scan_results["resources"]
+
+                    if scan_type == "users":
+                        # Update users
+                        if "users" in resources:
+                            update_scan_progress("Users", "Complete", len(resources["users"]))
+
+                        # Update groups
+                        if "groups" in resources:
+                            update_scan_progress("Groups", "Complete", len(resources["groups"]))
+
+                    elif scan_type == "catalogs":
+                        # Update catalogs
+                        if "catalogs" in resources:
+                            update_scan_progress("Catalogs", "Complete", len(resources["catalogs"]))
+
+                        # Update schemas
+                        if "schemas" in resources:
+                            schema_count = 0
+                            for catalog_schemas in resources["schemas"].values():
+                                schema_count += len(catalog_schemas)
+                            update_scan_progress("Schemas", "Complete", schema_count)
+
+                        # Update tables
+                        if "tables" in resources:
+                            table_count = 0
+                            for schema_tables in resources["tables"].values():
+                                table_count += len(schema_tables)
+                            update_scan_progress("Tables", "Complete", table_count)
+
+                    elif scan_type == "secrets":
+                        # Update secret scopes
+                        if "secret_scopes" in resources:
+                            update_scan_progress("Secret Scopes", "Complete", len(resources["secret_scopes"]))
+
+                        # Update secrets
+                        if "secrets" in resources:
+                            secret_count = 0
+                            for scope_secrets in resources["secrets"].values():
+                                secret_count += len(scope_secrets)
+                            update_scan_progress("Secrets", "Complete", secret_count)
+
+                    elif scan_type == "warehouses":
+                        # Update SQL warehouses
+                        if "warehouses" in resources:
+                            update_scan_progress("SQL Warehouses", "Complete", len(resources["warehouses"]))
+
+                    else:
+                        # For other scan types, update the generic resource
+                        resource_name = scan_type.replace("_", " ").title()
+                        for resource_type, resource_data in resources.items():
+                            if isinstance(resource_data, list):
+                                update_scan_progress(resource_name, "Complete", len(resource_data))
+                            elif isinstance(resource_data, dict):
+                                update_scan_progress(resource_name, "Complete", len(resource_data))
+
+                return scan_results
+
+            # Run the targeted scan with progress updates
             scan_results = ui.run_with_spinner(
                 f"Running {display_name} scan on {workspace}...",
-                run_targeted_scan,
-                workspace,
-                profile_data,
-                scan_type
+                targeted_scan_with_updates
             )
 
         if not scan_results:
@@ -812,7 +1021,7 @@ def run_workspace_scan(scan_type):
             ui.display(Text("Scan failed or returned no results.", style="red"), selected_option="2")
             return
 
-        # Display scan summary
+        # Display scan summary with detailed information
         display_scan_summary(scan_results, scan_type)
 
         # Save results if requested
@@ -834,8 +1043,10 @@ def run_workspace_scan(scan_type):
 
             if export_path:
                 ui.add_notification(f"Scan results exported to: {export_path}", "SUCCESS")
+                ui.add_notification(f"File saved at: {export_path}", "INFO")
             else:
                 ui.add_notification("Failed to export scan results.", "ERROR")
+                export_path = None  # Ensure it's None if export failed
 
         # Send to Discord if requested
         if send_to_discord:
@@ -845,17 +1056,20 @@ def run_workspace_scan(scan_type):
                 ui.add_notification("Discord webhook URL not configured.", "WARNING")
                 ui.add_notification("Use Configuration > Discord Settings to set up webhook URL.", "INFO")
             else:
+                # Import the send_scan_notification function directly
+                from utils.discord import send_scan_notification
+
                 success = ui.run_with_spinner(
                     "Sending scan results to Discord...",
-                    generate_and_send_report,
-                    workspace,
-                    profile_data.get("apikey"),
-                    notify="discord",
-                    scan_data=scan_results
+                    send_scan_notification,
+                    scan_results,
+                    export_path  # Pass the file path to the notification
                 )
 
                 if success:
                     ui.add_notification("Scan results sent to Discord successfully.", "SUCCESS")
+                    if export_path:
+                        ui.add_notification("File path included in Discord notification.", "INFO")
                 else:
                     ui.add_notification("Failed to send scan results to Discord.", "ERROR")
 
@@ -865,72 +1079,264 @@ def run_workspace_scan(scan_type):
 
 def display_scan_summary(scan_results, scan_type):
     """
-    Display a summary of scan results
+    Display a summary of scan results with detailed navigation information
 
     Args:
         scan_results (dict): Scan results
         scan_type (str): Type of scan
     """
-    # Create a table to display scan summary
-    table = ui.create_table(title=f"Scan Summary: {scan_type.title()}")
-    table.add_column("Resource Type", style="cyan")
-    table.add_column("Count", style="green")
-    table.add_column("Details", style="yellow")
+    if not scan_results:
+        ui.add_notification("No scan results to display.", "WARNING")
+        ui.display(Text("No scan results to display.", style="yellow"), selected_option="2")
+        return
 
-    # Extract resource counts based on scan type
+    workspace = scan_results.get("workspace", "Unknown")
+    resources = scan_results.get("resources", {})
+    # Include scan time in notification
+    scan_time = scan_results.get("scan_time", "Unknown")
+    ui.add_notification(f"Scan completed at: {scan_time}", "INFO")
+
+    # Create a main table for the scan summary
+    summary_table = ui.create_table(title=f"Workspace Scan: {workspace}")
+    summary_table.add_column("Resource Type", style="cyan")
+    summary_table.add_column("Count", style="green")
+    summary_table.add_column("Status", style="yellow")
+
+    # Add scan metadata
+    scan_type_display = scan_type.replace("_", " ").title()
+
+    # Create a more detailed view based on scan type
     if scan_type == "full":
-        resources = scan_results.get("resources", {})
+        # Show all resource types in the summary table
+        resource_types = [
+            ("Users", "users"),
+            ("Groups", "groups"),
+            ("Catalogs", "catalogs"),
+            ("Secret Scopes", "secret_scopes"),
+            ("SQL Warehouses", "warehouses"),
+            ("Clusters", "clusters"),
+            ("Jobs", "jobs"),
+            ("Instance Pools", "instance_pools"),
+            ("External Locations", "external_locations"),
+            ("Tokens", "tokens")
+        ]
 
-        # Add rows for each resource type
+        for display_name, key in resource_types:
+            if key in resources:
+                count = len(resources[key])
+                summary_table.add_row(
+                    display_name,
+                    str(count),
+                    "✓ Complete" if count > 0 else "No items found"
+                )
+
+        # Display the summary table
+        ui.display(summary_table, selected_option="2")
+
+    elif scan_type == "users":
+        # Show users and groups
         if "users" in resources:
-            table.add_row("Users", str(len(resources["users"])), f"Found {len(resources['users'])} users")
+            users = resources["users"]
+            summary_table.add_row("Users", str(len(users)), "✓ Complete")
 
         if "groups" in resources:
-            table.add_row("Groups", str(len(resources["groups"])), f"Found {len(resources['groups'])} groups")
+            groups = resources["groups"]
+            summary_table.add_row("Groups", str(len(groups)), "✓ Complete")
 
-        if "clusters" in resources:
-            table.add_row("Clusters", str(len(resources["clusters"])), f"Found {len(resources['clusters'])} clusters")
+        # Display the summary table
+        ui.display(summary_table, selected_option="2")
 
-        if "jobs" in resources:
-            table.add_row("Jobs", str(len(resources["jobs"])), f"Found {len(resources['jobs'])} jobs")
+        # Show detailed users table if available
+        if "users" in resources and len(resources["users"]) > 0:
+            # Create a table for users
+            users_table = ui.create_table(title="Users")
+            users_table.add_column("Username", style="cyan")
+            users_table.add_column("Display Name", style="green")
+            users_table.add_column("Groups", style="yellow")
 
-        if "secret_scopes" in resources:
-            table.add_row("Secret Scopes", str(len(resources["secret_scopes"])), f"Found {len(resources['secret_scopes'])} secret scopes")
+            # Add sample of users (up to 10)
+            sample_users = resources["users"][:10]
+            for user in sample_users:
+                username = user.get("userName", "N/A")
+                display_name = user.get("displayName", "N/A")
 
-        if "warehouses" in resources:
-            table.add_row("SQL Warehouses", str(len(resources["warehouses"])), f"Found {len(resources['warehouses'])} SQL warehouses")
+                # Get groups for this user
+                user_groups = []
+                if "groups" in user:
+                    user_groups = [g.get("display", g.get("value", "")) for g in user.get("groups", [])]
 
+                # Format groups display
+                groups_display = ", ".join(user_groups[:3])
+                if len(user_groups) > 3:
+                    groups_display += f" +{len(user_groups) - 3} more"
+
+                users_table.add_row(username, display_name, groups_display)
+
+            # Add note if showing a sample
+            if len(resources["users"]) > 10:
+                ui.add_notification(f"Showing sample of {len(sample_users)} users out of {len(resources['users'])} total", "INFO")
+
+            # Display the users table
+            ui.display(users_table, selected_option="2")
+
+    elif scan_type == "catalogs":
+        # Show catalogs, schemas, and tables
         if "catalogs" in resources:
-            table.add_row("Catalogs", str(len(resources["catalogs"])), f"Found {len(resources['catalogs'])} catalogs")
+            catalogs = resources["catalogs"]
+            summary_table.add_row("Catalogs", str(len(catalogs)), "✓ Complete")
 
-        if "external_locations" in resources:
-            table.add_row("External Locations", str(len(resources["external_locations"])), f"Found {len(resources['external_locations'])} external locations")
+        if "schemas" in resources:
+            # Count total schemas across all catalogs
+            schema_count = 0
+            for catalog_schemas in resources["schemas"].values():
+                schema_count += len(catalog_schemas)
+            summary_table.add_row("Schemas", str(schema_count), "✓ Sample")
 
-        if "instance_pools" in resources:
-            table.add_row("Instance Pools", str(len(resources["instance_pools"])), f"Found {len(resources['instance_pools'])} instance pools")
+        if "tables" in resources:
+            # Count total tables across all schemas
+            table_count = 0
+            for schema_tables in resources["tables"].values():
+                table_count += len(schema_tables)
+            summary_table.add_row("Tables", str(table_count), "✓ Sample")
 
-        if "tokens" in resources:
-            table.add_row("Tokens", str(len(resources["tokens"])), f"Found {len(resources['tokens'])} tokens")
+        # Display the summary table
+        ui.display(summary_table, selected_option="2")
+
+        # Show detailed catalogs and schemas if available
+        if "catalogs" in resources and len(resources["catalogs"]) > 0:
+            # Create a table for catalogs and schemas
+            catalogs_table = ui.create_table(title="Catalogs and Schemas")
+            catalogs_table.add_column("Catalog", style="cyan")
+            catalogs_table.add_column("Schemas", style="green")
+            catalogs_table.add_column("Sample Tables", style="yellow")
+
+            # Add catalogs and their schemas
+            for catalog in resources["catalogs"]:
+                catalog_name = catalog.get("name", "N/A")
+
+                # Get schemas for this catalog
+                catalog_schemas = []
+                if "schemas" in resources and catalog_name in resources["schemas"]:
+                    catalog_schemas = resources["schemas"][catalog_name]
+
+                # Format schemas display
+                schemas_display = ", ".join([s.get("name", "N/A") for s in catalog_schemas[:3]])
+                if len(catalog_schemas) > 3:
+                    schemas_display += f" +{len(catalog_schemas) - 3} more"
+                elif not catalog_schemas:
+                    schemas_display = "No schemas found"
+
+                # Get sample tables
+                sample_tables = "No tables sampled"
+                for schema_key, tables in resources.get("tables", {}).items():
+                    if schema_key.startswith(f"{catalog_name}."):
+                        table_names = [t.get("name", "N/A") for t in tables[:3]]
+                        sample_tables = ", ".join(table_names)
+                        if len(tables) > 3:
+                            sample_tables += f" +{len(tables) - 3} more"
+                        break
+
+                catalogs_table.add_row(catalog_name, schemas_display, sample_tables)
+
+            # Display the catalogs table
+            ui.display(catalogs_table, selected_option="2")
+
+    elif scan_type == "secrets":
+        # Show secret scopes and secrets
+        if "secret_scopes" in resources:
+            scopes = resources["secret_scopes"]
+            summary_table.add_row("Secret Scopes", str(len(scopes)), "✓ Complete")
+
+        if "secrets" in resources:
+            # Count total secrets across all scopes
+            secret_count = 0
+            for scope_secrets in resources["secrets"].values():
+                secret_count += len(scope_secrets)
+            summary_table.add_row("Secrets", str(secret_count), "✓ Complete")
+
+        # Display the summary table
+        ui.display(summary_table, selected_option="2")
+
+        # Show detailed secret scopes if available
+        if "secret_scopes" in resources and len(resources["secret_scopes"]) > 0:
+            # Create a table for secret scopes
+            scopes_table = ui.create_table(title="Secret Scopes")
+            scopes_table.add_column("Scope Name", style="cyan")
+            scopes_table.add_column("Backend Type", style="green")
+            scopes_table.add_column("Secrets", style="yellow")
+
+            # Add secret scopes and their secrets
+            for scope in resources["secret_scopes"]:
+                scope_name = scope.get("name", "N/A")
+                backend_type = scope.get("backend_type", "N/A")
+
+                # Get secrets for this scope
+                scope_secrets = []
+                if "secrets" in resources and scope_name in resources["secrets"]:
+                    scope_secrets = resources["secrets"][scope_name]
+
+                # Format secrets display
+                secrets_display = ", ".join([s.get("key", "N/A") for s in scope_secrets[:3]])
+                if len(scope_secrets) > 3:
+                    secrets_display += f" +{len(scope_secrets) - 3} more"
+                elif not scope_secrets:
+                    secrets_display = "No secrets found"
+
+                scopes_table.add_row(scope_name, backend_type, secrets_display)
+
+            # Display the scopes table
+            ui.display(scopes_table, selected_option="2")
+
+    elif scan_type == "warehouses":
+        # Show SQL warehouses
+        if "warehouses" in resources:
+            warehouses = resources["warehouses"]
+            summary_table.add_row("SQL Warehouses", str(len(warehouses)), "✓ Complete")
+
+        # Display the summary table
+        ui.display(summary_table, selected_option="2")
+
+        # Show detailed warehouses if available
+        if "warehouses" in resources and len(resources["warehouses"]) > 0:
+            # Create a table for warehouses
+            warehouses_table = ui.create_table(title="SQL Warehouses")
+            warehouses_table.add_column("Name", style="cyan")
+            warehouses_table.add_column("Size", style="green")
+            warehouses_table.add_column("State", style="yellow")
+
+            # Add warehouses
+            for warehouse in resources["warehouses"]:
+                name = warehouse.get("name", "N/A")
+                size = warehouse.get("size", "N/A")
+                state = warehouse.get("state", "N/A")
+
+                warehouses_table.add_row(name, size, state)
+
+            # Display the warehouses table
+            ui.display(warehouses_table, selected_option="2")
+
     else:
-        # For targeted scans, show specific resource counts
-        if scan_type == "users" and "users" in scan_results:
-            table.add_row("Users", str(len(scan_results["users"])), f"Found {len(scan_results['users'])} users")
+        # For other scan types, just show the summary table
+        for resource_type, resource_data in resources.items():
+            if isinstance(resource_data, list):
+                summary_table.add_row(
+                    resource_type.replace("_", " ").title(),
+                    str(len(resource_data)),
+                    "✓ Complete"
+                )
+            elif isinstance(resource_data, dict):
+                summary_table.add_row(
+                    resource_type.replace("_", " ").title(),
+                    str(len(resource_data)),
+                    "✓ Complete"
+                )
 
-        if scan_type == "users" and "groups" in scan_results:
-            table.add_row("Groups", str(len(scan_results["groups"])), f"Found {len(scan_results['groups'])} groups")
+        # Display the summary table
+        ui.display(summary_table, selected_option="2")
 
-        if scan_type == "catalogs" and "catalogs" in scan_results:
-            table.add_row("Catalogs", str(len(scan_results["catalogs"])), f"Found {len(scan_results['catalogs'])} catalogs")
-
-        if scan_type == "secrets" and "secret_scopes" in scan_results:
-            table.add_row("Secret Scopes", str(len(scan_results["secret_scopes"])), f"Found {len(scan_results['secret_scopes'])} secret scopes")
-
-        if scan_type == "warehouses" and "warehouses" in scan_results:
-            table.add_row("SQL Warehouses", str(len(scan_results["warehouses"])), f"Found {len(scan_results['warehouses'])} SQL warehouses")
-
-    # Display the table
-    ui.display(table, selected_option="2")
-    ui.add_notification("Scan completed successfully.", "SUCCESS")
+    # Add notification about scan completion
+    ui.add_notification(f"Scan of {workspace} completed successfully", "SUCCESS")
+    ui.add_notification(f"Scan type: {scan_type_display}", "INFO")
 
 def export_scan_results_ui():
     """

@@ -217,11 +217,6 @@ class VerticalUI:
                 level = notification["level"]
                 timestamp = notification["timestamp"]
 
-                # Truncate message if too long to fit in panel
-                max_message_length = width - 15  # Allow space for level and timestamp
-                if len(message) > max_message_length:
-                    message = message[:max_message_length-3] + "..."
-
                 # Set color based on level
                 if level == "ERROR":
                     color = self.colors["error"]
@@ -236,12 +231,33 @@ class VerticalUI:
                     color = self.colors["info"]
                     level_display = "INF"
 
-                # Add notification line - more compact format
+                # Add timestamp and level indicator
+                notifications_content.append(timestamp.strftime("%H:%M"), style="dim")  # Shorter time format
+                notifications_content.append(" ")
                 notifications_content.append(f"[{level_display}]", style=f"bold {color}")
                 notifications_content.append(" ")
-                notifications_content.append(f"{message}", style="white")
-                notifications_content.append(" ")
-                notifications_content.append(timestamp.strftime("%H:%M"), style="dim")  # Shorter time format
+
+                # Handle message with proper wrapping for long messages
+                max_message_length = width - 15  # Allow space for level and timestamp
+
+                # If message is too long, wrap it nicely
+                if len(message) > max_message_length:
+                    # Add first line
+                    notifications_content.append(f"{message[:max_message_length-3]}...", style="white")
+
+                    # For important messages (ERROR, WARNING), show continuation on next line
+                    if level in ["ERROR", "WARNING", "SUCCESS"]:
+                        # Only add continuation for longer messages
+                        if len(message) > max_message_length + 20:
+                            notifications_content.append("\n    ")  # Indent continuation
+                            second_part = message[max_message_length-3:]
+                            # Truncate second part if still too long
+                            if len(second_part) > max_message_length - 5:
+                                second_part = second_part[:max_message_length-8] + "..."
+                            notifications_content.append(second_part, style="white dim")
+                else:
+                    # Message fits in one line
+                    notifications_content.append(f"{message}", style="white")
 
         # Create notifications panel - more compact
         return Panel(

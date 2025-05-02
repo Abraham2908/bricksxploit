@@ -3,7 +3,6 @@ Discord notification utilities for BricksXploit
 """
 
 import requests
-import json
 import datetime
 from rich.console import Console
 from .storage import load_config, update_config
@@ -293,23 +292,78 @@ def send_validation_notification(workspace, apikey, status, user_info=None):
         message=f"BricksXploit validation result for `{workspace}`: **{'Valid' if status == 'valid' else 'Invalid'}**"
     )
 
-def send_scan_notification(report_data):
+def send_scan_notification(report_data, file_path=None):
     """
-    Send a scan report notification to Discord
+    Send a scan report notification to Discord with file information
 
     Args:
         report_data (dict): Report data
+        file_path (str, optional): Path to the exported file
 
     Returns:
         bool: Success or failure
     """
     workspace = report_data.get("workspace", "Unknown")
+    scan_time = report_data.get("timestamp", "Unknown")
+
+    # Create a more detailed message
+    message = f"BricksXploit completed a security scan for `{workspace}`\n"
+
+    # Add scan type if available
+    scan_type = "Unknown"
+    if "scan_type" in report_data:
+        scan_type = report_data.get("scan_type", "").replace("_", " ").title()
+    else:
+        # Try to determine scan type from resources
+        resources = report_data.get("resources", {})
+        if "users" in resources and "groups" in resources and not "catalogs" in resources:
+            scan_type = "Users & Permissions"
+        elif "catalogs" in resources and "schemas" in resources:
+            scan_type = "Catalogs & Schemas"
+        elif "secret_scopes" in resources:
+            scan_type = "Secret Scopes"
+        elif "warehouses" in resources:
+            scan_type = "SQL Warehouses"
+        elif len(resources.keys()) > 3:
+            scan_type = "Full Workspace"
+
+    message += f"**Scan Type:** {scan_type}\n"
+
+    # Add file information if available
+    if file_path:
+        message += f"**Report saved to:** `{file_path}`\n"
+
+    # Add timestamp
+    message += f"**Scan Time:** {scan_time}\n"
+
+    # Add summary counts
+    resources = report_data.get("resources", {})
+    if resources:
+        message += "\n**Resource Counts:**\n"
+
+        # Add users and groups
+        if "users" in resources:
+            message += f"• Users: {len(resources['users'])}\n"
+        if "groups" in resources:
+            message += f"• Groups: {len(resources['groups'])}\n"
+
+        # Add catalogs and schemas
+        if "catalogs" in resources:
+            message += f"• Catalogs: {len(resources['catalogs'])}\n"
+
+        # Add secret scopes
+        if "secret_scopes" in resources:
+            message += f"• Secret Scopes: {len(resources['secret_scopes'])}\n"
+
+        # Add SQL warehouses
+        if "warehouses" in resources:
+            message += f"• SQL Warehouses: {len(resources['warehouses'])}\n"
 
     return send_discord_notification(
         report_data,
         notification_type="report",
-        title="Databricks Security Scan Report",
-        message=f"BricksXploit completed a security scan for `{workspace}`"
+        title=f"Databricks Security Scan Report - {scan_type}",
+        message=message
     )
 
 def send_alert_notification(workspace, alert_type, severity, details):
