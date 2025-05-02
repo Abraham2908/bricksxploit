@@ -15,12 +15,12 @@ sys.path.insert(0, current_dir)
 # Importações absolutas
 from core.auth import save_credentials
 from core.report import validate_and_notify, generate_and_send_report
-from menu_simple import show_menu
+from menu_vertical import show_menu
 from utils.storage import load_config
-from utils.ui_simple import SimpleUI
+from utils.ui_vertical import VerticalUI
 
-# Inicializar a interface simplificada
-ui = SimpleUI(title="BricksXploit", version="1.0.0")
+# Inicializar a interface vertical
+ui = VerticalUI(title="BricksXploit", version="1.0.0")
 console = Console()
 
 def main():
@@ -44,17 +44,16 @@ def main():
     if args.workspace and args.apikey:
         if args.validate:
             # Validate credentials only
-            ui.set_content(Text(f"Validating credentials for workspace: {args.workspace}", style="cyan"))
             ui.add_notification(f"Validating credentials for workspace: {args.workspace}", "INFO")
+            ui.display(Text(f"Validating credentials for workspace: {args.workspace}", style="cyan"))
 
-            with ui.display() as live:
-                ui.update()
-
-                result = validate_and_notify(
-                    args.workspace,
-                    args.apikey,
-                    args.notify
-                )
+            result = ui.run_with_spinner(
+                f"Validating credentials for {args.workspace}...",
+                validate_and_notify,
+                args.workspace,
+                args.apikey,
+                args.notify
+            )
 
             # Save credentials if requested and valid
             if args.save and result.get("status") == "valid":
@@ -63,35 +62,52 @@ def main():
 
                 ui.add_notification(f"Saving credentials for: {args.workspace}", "INFO")
 
-                save_credentials(args.workspace, args.apikey, organization, profile_name=profile_name)
+                success = ui.run_with_spinner(
+                    f"Saving credentials for {args.workspace}...",
+                    save_credentials,
+                    args.workspace,
+                    args.apikey,
+                    organization,
+                    profile_name=profile_name
+                )
 
-                ui.add_notification(f"Credentials saved for: {profile_name}", "SUCCESS")
+                if success:
+                    ui.add_notification(f"Credentials saved for: {profile_name}", "SUCCESS")
+                    ui.display(Text(f"Credentials saved for: {profile_name}", style="green"))
+                else:
+                    ui.add_notification("Failed to save credentials.", "ERROR")
+                    ui.display(Text("Failed to save credentials.", style="red"))
 
             return
 
         elif args.output or args.notify:
             # Generate report
-            ui.set_content(Text(f"Generating report for workspace: {args.workspace}", style="cyan"))
             ui.add_notification(f"Generating report for workspace: {args.workspace}", "INFO")
+            ui.display(Text(f"Generating report for workspace: {args.workspace}", style="cyan"))
 
-            with ui.display() as live:
-                ui.update()
-
-                report_data = generate_and_send_report(
-                    args.workspace,
-                    args.apikey,
-                    args.output,
-                    args.notify
-                )
+            report_data = ui.run_with_spinner(
+                f"Generating report for {args.workspace}...",
+                generate_and_send_report,
+                args.workspace,
+                args.apikey,
+                args.output,
+                args.notify
+            )
 
             if report_data:
                 ui.add_notification("Report generated successfully.", "SUCCESS")
 
+                result_text = Text("Report generated successfully.\n", style="green")
+
                 if args.output:
                     ui.add_notification(f"Report saved to {args.output}", "SUCCESS")
+                    result_text.append(f"Report saved to {args.output}\n", style="green")
 
                 if args.notify:
                     ui.add_notification(f"Report sent to {args.notify}", "SUCCESS")
+                    result_text.append(f"Report sent to {args.notify}", style="green")
+
+                ui.display(result_text)
 
             # Save credentials if requested
             if args.save:
@@ -100,9 +116,21 @@ def main():
 
                 ui.add_notification(f"Saving credentials for: {args.workspace}", "INFO")
 
-                save_credentials(args.workspace, args.apikey, organization, profile_name=profile_name)
+                success = ui.run_with_spinner(
+                    f"Saving credentials for {args.workspace}...",
+                    save_credentials,
+                    args.workspace,
+                    args.apikey,
+                    organization,
+                    profile_name=profile_name
+                )
 
-                ui.add_notification(f"Credentials saved for: {profile_name}", "SUCCESS")
+                if success:
+                    ui.add_notification(f"Credentials saved for: {profile_name}", "SUCCESS")
+                    ui.display(Text(f"Credentials saved for: {profile_name}", style="green"))
+                else:
+                    ui.add_notification("Failed to save credentials.", "ERROR")
+                    ui.display(Text("Failed to save credentials.", style="red"))
 
             return
 

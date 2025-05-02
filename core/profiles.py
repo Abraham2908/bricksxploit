@@ -198,7 +198,7 @@ def switch_profile(org_name=None, profile_name=None):
         print_error("Invalid selection. Please enter a number.")
         return False
 
-def add_new_profile(workspace, apikey, organization=None, profile_name=None):
+def add_new_profile(workspace, apikey, organization=None, profile_name=None, user_info=None):
     """
     Add a new profile
 
@@ -207,17 +207,19 @@ def add_new_profile(workspace, apikey, organization=None, profile_name=None):
         apikey (str): API key
         organization (str, optional): Organization name
         profile_name (str, optional): Custom profile name (defaults to workspace)
+        user_info (dict, optional): User info from validate_credentials (to avoid re-validation)
 
     Returns:
         bool: Success or failure
     """
-    # Validate credentials first
-    print_info(f"Validating credentials for workspace: {workspace}")
-    user_info = validate_credentials(workspace, apikey)
-
+    # Validate credentials if user_info not provided
     if not user_info:
-        print_error("Invalid credentials. Profile not added.")
-        return False
+        print_info(f"Validating credentials for workspace: {workspace}")
+        user_info = validate_credentials(workspace, apikey)
+
+        if not user_info:
+            print_error("Invalid credentials. Profile not added.")
+            return False
 
     # Get display name from user info
     display_name = user_info.get("displayName") or workspace
@@ -225,14 +227,21 @@ def add_new_profile(workspace, apikey, organization=None, profile_name=None):
     # Use provided profile name or default to workspace
     final_profile_name = profile_name if profile_name else workspace
 
-    # Create metadata
+    # Create metadata (limit the amount of data stored to improve performance)
     metadata = {
         "user_id": user_info.get("id"),
         "username": user_info.get("userName"),
-        "email": user_info.get("emails", [{}])[0].get("value") if user_info.get("emails") else None,
-        "groups": user_info.get("groups", []),
-        "roles": user_info.get("roles", [])
+        "email": user_info.get("emails", [{}])[0].get("value") if user_info.get("emails") else None
     }
+
+    # Only include groups and roles if they're not too large
+    groups = user_info.get("groups", [])
+    if groups and len(groups) <= 20:  # Limit to 20 groups
+        metadata["groups"] = groups
+
+    roles = user_info.get("roles", [])
+    if roles and len(roles) <= 10:  # Limit to 10 roles
+        metadata["roles"] = roles
 
     # Add profile
     success = add_profile(workspace, apikey, display_name, organization, metadata, profile_name=final_profile_name)
@@ -240,12 +249,11 @@ def add_new_profile(workspace, apikey, organization=None, profile_name=None):
     if success:
         print_success(f"Profile added: {final_profile_name}" + (f" ({organization})" if organization else ""))
 
-        # Ask if user wants to set this as the current profile
-        if confirm("Set as current profile?", default=True):
-            if set_current_profile(organization, final_profile_name):
-                print_success(f"Current profile set to: {final_profile_name}" + (f" ({organization})" if organization else ""))
-            else:
-                print_error("Failed to set current profile.")
+        # Set as current profile automatically
+        if set_current_profile(organization, final_profile_name):
+            print_success(f"Current profile set to: {final_profile_name}" + (f" ({organization})" if organization else ""))
+        else:
+            print_error("Failed to set current profile.")
 
         return True
     else:
