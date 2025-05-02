@@ -57,26 +57,28 @@ class VerticalUI:
 
     def draw_header(self):
         """
-        Draw the header with the banner from banner.py
+        Draw the header with the banner from banner.py as the main element
         """
-        from utils.banner import SMALL_BANNER, __version__, TAGLINES
-        import random
+        from utils.banner import MAIN_BANNER, __version__
+        from rich.align import Align
 
-        # Get a random tagline
-        tagline = random.choice(TAGLINES)
+        # Create the banner text - using MAIN_BANNER for a more compact display
+        banner_text = Text(MAIN_BANNER, style=f"bold {self.colors['primary']}")
 
-        # Create the banner text
-        banner_text = Text(SMALL_BANNER, style=f"bold {self.colors['primary']}")
+        # Add version information directly to the banner
+        version_text = Text(f" v{self.version}", style=f"bold {self.colors['secondary']}")
+        banner_text.append(version_text)
 
-        # Create the panel
+        # Create centered banner
+        centered_banner = Align.center(banner_text)
+
+        # Create the panel with just the banner - more compact
         self.console.print(Panel(
-            banner_text,
-            title=f"[bold yellow]{self.title} v{self.version}[/bold yellow]",
-            subtitle=f"[bold green]{tagline}[/bold green]",
+            centered_banner,
             style="white",
             border_style=self.colors['primary'],
             width=self.terminal_width,
-            padding=(0, 1)
+            padding=(0, 0)
         ))
 
     def draw_footer(self, selected_option=None):
@@ -86,28 +88,40 @@ class VerticalUI:
         Args:
             selected_option (str, optional): Currently selected option
         """
-        # Create menu items text
+        # Create menu items text - more compact
         menu_text = ""
         if self.menu_items:
             items = []
             for i, item in enumerate(self.menu_items, 1):
+                # Use shorter display names for menu items to save space
+                short_name = item
+                if len(short_name) > 15:  # Truncate long menu item names
+                    short_name = short_name[:12] + "..."
+
                 if selected_option and selected_option == str(i):
-                    items.append(f"[bold white on {self.colors['primary']}][{i}] {item}[/]")
+                    items.append(f"[bold white on {self.colors['primary']}][{i}] {short_name}[/]")
                 else:
-                    items.append(f"[{i}] {item}")
+                    items.append(f"[{i}] {short_name}")
             menu_text = " | ".join(items)
 
-        # Create profile text
+        # Create profile text - more compact
         if self.active_profile:
-            profile_text = f"[bold {self.colors['success']}]Active Profile: {self.active_profile}"
+            profile_name = self.active_profile
+            if len(profile_name) > 15:  # Truncate long profile names
+                profile_name = profile_name[:12] + "..."
+
+            profile_text = f"[bold {self.colors['success']}]{profile_name}"
             if self.active_organization:
-                profile_text += f" ({self.active_organization})[/]"
+                org_name = self.active_organization
+                if len(org_name) > 15:  # Truncate long organization names
+                    org_name = org_name[:12] + "..."
+                profile_text += f" ({org_name})[/]"
             else:
                 profile_text += "[/]"
         else:
-            profile_text = f"[bold {self.colors['warning']}]No active profile[/]"
+            profile_text = f"[bold {self.colors['warning']}]No profile[/]"
 
-        # Create footer panel
+        # Create footer panel - more compact
         self.console.print(Panel(
             f"{menu_text}",
             title=profile_text,
@@ -115,7 +129,7 @@ class VerticalUI:
             style="white",
             border_style=self.colors['primary'],
             width=self.terminal_width,
-            padding=(0, 1)
+            padding=(0, 0)  # No padding for more compact display
         ))
 
     def draw_content_and_notifications(self, content):
@@ -125,12 +139,33 @@ class VerticalUI:
         Args:
             content: Content to display
         """
-        # Calculate widths for content and notifications
-        content_width = int(self.terminal_width * 0.65)
-        notifications_width = self.terminal_width - content_width - 3  # 3 for spacing
+        # Get terminal dimensions
+        self.terminal_width = os.get_terminal_size().columns
+        self.terminal_height = os.get_terminal_size().lines
+
+        # Ensure minimum width but don't force it to be too large
+        min_width = 80
+        min_height = 20  # Reduced minimum height
+        max_height = 30  # Maximum height to keep interface compact
+
+        # Use actual terminal size within constraints
+        effective_width = max(self.terminal_width, min_width)
+        effective_height = min(max(self.terminal_height, min_height), max_height)
+
+        # Calculate widths for content and notifications - adaptive based on terminal width
+        # For smaller terminals, give more space to content
+        if effective_width < 100:
+            content_ratio = 0.7  # 70% for content in small terminals
+        else:
+            content_ratio = 0.65  # 65% for content in larger terminals
+
+        content_width = int(effective_width * content_ratio)
+        notifications_width = effective_width - content_width - 3  # 3 for spacing
 
         # Calculate available height for content (terminal height - header - footer - prompt)
-        content_height = self.terminal_height - 8  # Adjust as needed
+        # Adaptive based on terminal height
+        header_footer_space = 8  # Space taken by header, footer, and prompt
+        content_height = min(15, max(10, effective_height - header_footer_space))  # Limit maximum height
 
         # Format content panel
         content_panel = Panel(
@@ -141,7 +176,7 @@ class VerticalUI:
             border_style=self.colors['primary'],
             width=content_width,
             height=content_height,
-            padding=(1, 2)
+            padding=(0, 1)  # Minimal padding for smaller terminals
         )
 
         # Format notifications panel
@@ -168,7 +203,8 @@ class VerticalUI:
             notifications_content = Text("No notifications", style="dim")
         else:
             # Show only the most recent notifications that fit in the panel
-            max_notifications = height - 4  # Adjust for panel borders and padding
+            # Limit to fewer notifications for a more compact display
+            max_notifications = min(height - 2, 8)  # Maximum of 8 notifications or panel height
             recent_notifications = self.notifications[-max_notifications:] if len(self.notifications) > max_notifications else self.notifications
 
             # Create notification text
@@ -181,27 +217,33 @@ class VerticalUI:
                 level = notification["level"]
                 timestamp = notification["timestamp"]
 
+                # Truncate message if too long to fit in panel
+                max_message_length = width - 15  # Allow space for level and timestamp
+                if len(message) > max_message_length:
+                    message = message[:max_message_length-3] + "..."
+
                 # Set color based on level
                 if level == "ERROR":
                     color = self.colors["error"]
-                    level_display = "ERROR"
+                    level_display = "ERR"
                 elif level == "WARNING":
                     color = self.colors["warning"]
-                    level_display = "WARN "
+                    level_display = "WRN"
                 elif level == "SUCCESS":
                     color = self.colors["success"]
-                    level_display = "OK   "
+                    level_display = "OK "
                 else:
                     color = self.colors["info"]
-                    level_display = "INFO "
+                    level_display = "INF"
 
-                # Add notification line
-                notifications_content.append(f"[{level_display}] ", style=f"bold {color}")
+                # Add notification line - more compact format
+                notifications_content.append(f"[{level_display}]", style=f"bold {color}")
+                notifications_content.append(" ")
                 notifications_content.append(f"{message}", style="white")
                 notifications_content.append(" ")
-                notifications_content.append(timestamp.strftime("%H:%M:%S"), style="dim")
+                notifications_content.append(timestamp.strftime("%H:%M"), style="dim")  # Shorter time format
 
-        # Create notifications panel
+        # Create notifications panel - more compact
         return Panel(
             notifications_content,
             title="— NOTIFICATIONS —",
@@ -210,7 +252,7 @@ class VerticalUI:
             border_style=self.colors['secondary'],
             width=width,
             height=height,
-            padding=(1, 1)
+            padding=(0, 1)  # Reduced vertical padding
         )
 
     def display(self, content, selected_option=None):
