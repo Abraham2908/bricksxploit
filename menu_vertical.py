@@ -14,9 +14,11 @@ sys.path.insert(0, current_dir)
 # Importações absolutas
 from core.auth import validate_credentials
 from core.profiles import list_profiles, switch_profile, add_new_profile
-from core.report import validate_and_notify
+from core.report import validate_and_notify, generate_and_send_report
+from core.scan import run_full_scan, run_targeted_scan
+from core.export import export_scan_results, export_report
 from utils.storage import save_config, get_webhook_url, set_webhook_url
-from utils.storage import get_current_profile
+from utils.storage import get_current_profile, save_scan_result
 from utils.ui_vertical import VerticalUI
 
 # Inicializar a interface vertical
@@ -65,8 +67,7 @@ def show_menu(config):
             profile_menu(config)
         elif choice == "2":
             # Scan workspace
-            ui.add_notification("Scan functionality will be implemented in a future update.", "INFO")
-            ui.display(Text("Scan functionality will be implemented in a future update.", style="yellow"), selected_option="2")
+            scan_menu(config)
         elif choice == "3":
             # Run SQL query
             ui.add_notification("SQL query functionality will be implemented in a future update.", "INFO")
@@ -256,8 +257,8 @@ def add_profile_ui():
     ui.display(Text("Add Profile: Add a new Databricks workspace profile.\n\nPlease provide the following information:", style="cyan"), selected_option="3")
 
     # Get profile information
-    workspace = ui.prompt("Enter workspace (e.g., dbc-xxxx.cloud.databricks.com)")
-    apikey = ui.prompt("Enter API key", password=True)
+    workspace = ui.prompt("Enter workspace URL (e.g., https://dbc-xxxx.cloud.databricks.com, https://adb-xxxx.azuredatabricks.net, https://xxxx.gcp.databricks.com)")
+    apikey = ui.prompt("Enter Databricks Personal Access Token (PAT)", password=True)
 
     # Ask for a friendly profile name (different from workspace URL)
     profile_name = ui.prompt("Enter profile name (leave empty to use workspace URL)", default="")
@@ -458,8 +459,8 @@ def validate_menu(_):
         return
 
     # Get workspace and API key
-    workspace = ui.prompt("Enter workspace (e.g., dbc-xxxx.cloud.databricks.com)")
-    apikey = ui.prompt("Enter API key", password=True)
+    workspace = ui.prompt("Enter workspace URL (e.g., https://dbc-xxxx.cloud.databricks.com, https://adb-xxxx.azuredatabricks.net, https://xxxx.gcp.databricks.com)")
+    apikey = ui.prompt("Enter Databricks Personal Access Token (PAT)", password=True)
 
     # Ask if user wants to save credentials if valid
     save_if_valid = ui.confirm("Save these credentials if valid?", default=False)
@@ -676,6 +677,328 @@ def display_settings(_):
         else:
             ui.add_notification("Failed to update display settings.", "ERROR")
             ui.display(Text("Failed to update display settings.", style="red"), selected_option="2")
+
+def scan_menu(_):
+    """
+    Display the scan menu
+
+    Args:
+        _ (dict): Application configuration (not used)
+    """
+    # Define scan menu items
+    menu_items = [
+        "Full Workspace Scan",
+        "Scan Users & Permissions",
+        "Scan Catalogs & Schemas",
+        "Scan Secret Scopes",
+        "Scan SQL Warehouses",
+        "Export Scan Results",
+        "Back to Main Menu"
+    ]
+
+    ui.set_menu("Scan Workspace", menu_items)
+    ui.display(Text("Scan Workspace: Enumerate and analyze Databricks workspace resources.", style="cyan"), selected_option="2")
+
+    # Scan menu loop
+    while True:
+        # Get user choice
+        choice = ui.prompt("Select an option", choices=["1", "2", "3", "4", "5", "6", "7"], default="1")
+
+        if choice == "1":
+            # Full workspace scan
+            run_workspace_scan("full")
+        elif choice == "2":
+            # Scan users and permissions
+            run_workspace_scan("users")
+        elif choice == "3":
+            # Scan catalogs and schemas
+            run_workspace_scan("catalogs")
+        elif choice == "4":
+            # Scan secret scopes
+            run_workspace_scan("secrets")
+        elif choice == "5":
+            # Scan SQL warehouses
+            run_workspace_scan("warehouses")
+        elif choice == "6":
+            # Export scan results
+            export_scan_results_ui()
+        elif choice == "7":
+            # Back to main menu
+            # Define main menu items again to ensure they're displayed correctly
+            main_menu_items = [
+                "Profile Management",
+                "Scan Workspace",
+                "Run SQL Query",
+                "Generate Reports",
+                "View Results",
+                "Configuration",
+                "Validate Credentials",
+                "Exit"
+            ]
+            ui.set_menu("Main Menu", main_menu_items)
+            # Display the main menu content before breaking out of the loop
+            ui.add_notification("Returning to main menu...", "INFO")
+            ui.display(Text("Welcome to BricksXploit! Select an option from the menu.", style="cyan"))
+            break
+
+def run_workspace_scan(scan_type):
+    """
+    Run a workspace scan
+
+    Args:
+        scan_type (str): Type of scan to run (full, users, catalogs, secrets, warehouses)
+    """
+    # Get current profile info
+    org, profile_name, profile_data = get_current_profile()
+
+    if not profile_data:
+        ui.add_notification("No active profile selected.", "WARNING")
+        ui.display(Text("No active profile selected. Please select a profile first.", style="yellow"), selected_option="2")
+        return
+
+    workspace = profile_data.get("workspace")
+    if not workspace:
+        ui.add_notification("Invalid profile data. Missing workspace.", "ERROR")
+        ui.display(Text("Invalid profile data. Missing workspace.", style="red"), selected_option="2")
+        return
+
+    # Confirm scan
+    scan_type_display = {
+        "full": "Full Workspace",
+        "users": "Users & Permissions",
+        "catalogs": "Catalogs & Schemas",
+        "secrets": "Secret Scopes",
+        "warehouses": "SQL Warehouses"
+    }
+
+    display_name = scan_type_display.get(scan_type, scan_type.title())
+
+    confirm = ui.confirm(f"Run {display_name} scan on {workspace}?", default=True)
+    if not confirm:
+        ui.add_notification("Scan cancelled.", "INFO")
+        return
+
+    # Ask if user wants to save results
+    save_results = ui.confirm("Save scan results to file?", default=True)
+
+    # Ask if user wants to send results to Discord
+    send_to_discord = ui.confirm("Send scan results to Discord?", default=False)
+
+    # Run the scan
+    ui.add_notification(f"Starting {display_name} scan on {workspace}...", "INFO")
+    ui.display(Text(f"Starting {display_name} scan on {workspace}...\nThis may take a while depending on the size of your workspace.", style="cyan"), selected_option="2")
+
+    try:
+        if scan_type == "full":
+            # Run full scan
+            scan_results = ui.run_with_spinner(
+                f"Running full workspace scan on {workspace}...",
+                run_full_scan,
+                workspace,
+                profile_data
+            )
+        else:
+            # Run targeted scan
+            scan_results = ui.run_with_spinner(
+                f"Running {display_name} scan on {workspace}...",
+                run_targeted_scan,
+                workspace,
+                profile_data,
+                scan_type
+            )
+
+        if not scan_results:
+            ui.add_notification("Scan failed or returned no results.", "ERROR")
+            ui.display(Text("Scan failed or returned no results.", style="red"), selected_option="2")
+            return
+
+        # Display scan summary
+        display_scan_summary(scan_results, scan_type)
+
+        # Save results if requested
+        if save_results:
+            # Ask for export format
+            export_format = ui.prompt(
+                "Export format",
+                choices=["json", "csv"],
+                default="json"
+            )
+
+            # Export the results
+            export_path = ui.run_with_spinner(
+                f"Exporting scan results to {export_format.upper()}...",
+                export_scan_results,
+                scan_results,
+                export_format
+            )
+
+            if export_path:
+                ui.add_notification(f"Scan results exported to: {export_path}", "SUCCESS")
+            else:
+                ui.add_notification("Failed to export scan results.", "ERROR")
+
+        # Send to Discord if requested
+        if send_to_discord:
+            webhook_url = get_webhook_url()
+
+            if not webhook_url:
+                ui.add_notification("Discord webhook URL not configured.", "WARNING")
+                ui.add_notification("Use Configuration > Discord Settings to set up webhook URL.", "INFO")
+            else:
+                success = ui.run_with_spinner(
+                    "Sending scan results to Discord...",
+                    generate_and_send_report,
+                    workspace,
+                    profile_data.get("apikey"),
+                    notify="discord",
+                    scan_data=scan_results
+                )
+
+                if success:
+                    ui.add_notification("Scan results sent to Discord successfully.", "SUCCESS")
+                else:
+                    ui.add_notification("Failed to send scan results to Discord.", "ERROR")
+
+    except Exception as e:
+        ui.add_notification(f"Error during scan: {str(e)}", "ERROR")
+        ui.display(Text(f"Error during scan: {str(e)}", style="red"), selected_option="2")
+
+def display_scan_summary(scan_results, scan_type):
+    """
+    Display a summary of scan results
+
+    Args:
+        scan_results (dict): Scan results
+        scan_type (str): Type of scan
+    """
+    # Create a table to display scan summary
+    table = ui.create_table(title=f"Scan Summary: {scan_type.title()}")
+    table.add_column("Resource Type", style="cyan")
+    table.add_column("Count", style="green")
+    table.add_column("Details", style="yellow")
+
+    # Extract resource counts based on scan type
+    if scan_type == "full":
+        resources = scan_results.get("resources", {})
+
+        # Add rows for each resource type
+        if "users" in resources:
+            table.add_row("Users", str(len(resources["users"])), f"Found {len(resources['users'])} users")
+
+        if "groups" in resources:
+            table.add_row("Groups", str(len(resources["groups"])), f"Found {len(resources['groups'])} groups")
+
+        if "clusters" in resources:
+            table.add_row("Clusters", str(len(resources["clusters"])), f"Found {len(resources['clusters'])} clusters")
+
+        if "jobs" in resources:
+            table.add_row("Jobs", str(len(resources["jobs"])), f"Found {len(resources['jobs'])} jobs")
+
+        if "secret_scopes" in resources:
+            table.add_row("Secret Scopes", str(len(resources["secret_scopes"])), f"Found {len(resources['secret_scopes'])} secret scopes")
+
+        if "warehouses" in resources:
+            table.add_row("SQL Warehouses", str(len(resources["warehouses"])), f"Found {len(resources['warehouses'])} SQL warehouses")
+
+        if "catalogs" in resources:
+            table.add_row("Catalogs", str(len(resources["catalogs"])), f"Found {len(resources['catalogs'])} catalogs")
+
+        if "external_locations" in resources:
+            table.add_row("External Locations", str(len(resources["external_locations"])), f"Found {len(resources['external_locations'])} external locations")
+
+        if "instance_pools" in resources:
+            table.add_row("Instance Pools", str(len(resources["instance_pools"])), f"Found {len(resources['instance_pools'])} instance pools")
+
+        if "tokens" in resources:
+            table.add_row("Tokens", str(len(resources["tokens"])), f"Found {len(resources['tokens'])} tokens")
+    else:
+        # For targeted scans, show specific resource counts
+        if scan_type == "users" and "users" in scan_results:
+            table.add_row("Users", str(len(scan_results["users"])), f"Found {len(scan_results['users'])} users")
+
+        if scan_type == "users" and "groups" in scan_results:
+            table.add_row("Groups", str(len(scan_results["groups"])), f"Found {len(scan_results['groups'])} groups")
+
+        if scan_type == "catalogs" and "catalogs" in scan_results:
+            table.add_row("Catalogs", str(len(scan_results["catalogs"])), f"Found {len(scan_results['catalogs'])} catalogs")
+
+        if scan_type == "secrets" and "secret_scopes" in scan_results:
+            table.add_row("Secret Scopes", str(len(scan_results["secret_scopes"])), f"Found {len(scan_results['secret_scopes'])} secret scopes")
+
+        if scan_type == "warehouses" and "warehouses" in scan_results:
+            table.add_row("SQL Warehouses", str(len(scan_results["warehouses"])), f"Found {len(scan_results['warehouses'])} SQL warehouses")
+
+    # Display the table
+    ui.display(table, selected_option="2")
+    ui.add_notification("Scan completed successfully.", "SUCCESS")
+
+def export_scan_results_ui():
+    """
+    Export scan results to a file
+    """
+    # Load available scan results
+    from utils.storage import list_scan_results
+    scan_results = list_scan_results()
+
+    if not scan_results:
+        ui.add_notification("No scan results found.", "WARNING")
+        ui.display(Text("No scan results found. Run a scan first.", style="yellow"), selected_option="6")
+        return
+
+    # Create a table to display available scan results
+    table = ui.create_table(title="Available Scan Results")
+    table.add_column("#", style="cyan")
+    table.add_column("Scan Type", style="green")
+    table.add_column("Workspace", style="yellow")
+    table.add_column("Timestamp", style="magenta")
+
+    # Add rows for each scan result
+    for i, result in enumerate(scan_results, 1):
+        table.add_row(
+            str(i),
+            result.get("scan_type", "Unknown"),
+            result.get("workspace", "Unknown"),
+            result.get("timestamp", "Unknown")
+        )
+
+    ui.display(table, selected_option="6")
+
+    # Get user choice
+    choice = ui.prompt(
+        "Select a scan result to export (or 0 to cancel)",
+        choices=["0"] + [str(i) for i in range(1, len(scan_results) + 1)],
+        default="0"
+    )
+
+    if choice == "0":
+        ui.add_notification("Export cancelled.", "INFO")
+        return
+
+    # Get selected scan result
+    selected_index = int(choice) - 1
+    selected_result = scan_results[selected_index]
+
+    # Ask for export format
+    export_format = ui.prompt(
+        "Export format",
+        choices=["json", "csv", "markdown"],
+        default="json"
+    )
+
+    # Export the results
+    export_path = ui.run_with_spinner(
+        f"Exporting scan results to {export_format.upper()}...",
+        export_report,
+        selected_result.get("data", {}),
+        export_format
+    )
+
+    if export_path:
+        ui.add_notification(f"Scan results exported to: {export_path}", "SUCCESS")
+        ui.display(Text(f"Scan results exported to: {export_path}", style="green"), selected_option="6")
+    else:
+        ui.add_notification("Failed to export scan results.", "ERROR")
+        ui.display(Text("Failed to export scan results.", style="red"), selected_option="6")
 
 def scan_settings(_):
     """

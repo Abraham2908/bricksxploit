@@ -21,28 +21,52 @@ console = Console()
 
 def get_workspace_url(workspace):
     """
-    Construct the full workspace URL
+    Construct and normalize the full workspace URL for AWS, Azure, and GCP Databricks
 
     Args:
         workspace (str): Workspace name or URL
 
     Returns:
-        str: Full workspace URL
+        str: Normalized full workspace URL
     """
     if not workspace:
         print_error("Workspace is missing! Please provide a valid workspace identifier.")
         return None
 
-    # Check if it's already a full URL
-    if workspace.startswith("http"):
-        return workspace
+    # Remove leading/trailing whitespace
+    workspace = workspace.strip()
 
-    # Check for different Databricks domains
+    # Remove trailing slash if present
+    if workspace.endswith('/'):
+        workspace = workspace[:-1]
+
+    # Handle URLs with protocol
+    if workspace.startswith(('http://', 'https://')):
+        # Extract the domain part (remove protocol)
+        if workspace.startswith('http://'):
+            workspace = workspace[7:]
+        elif workspace.startswith('https://'):
+            workspace = workspace[8:]
+
+        # Remove trailing slash if present after removing protocol
+        if workspace.endswith('/'):
+            workspace = workspace[:-1]
+
+        # Add https protocol (always use HTTPS)
+        return f"https://{workspace}"
+
+    # Handle different Databricks domains
     if "databricks.com" in workspace:
-        # Already has domain, just add https
+        # AWS or default Databricks
+        return f"https://{workspace}"
+    elif "azuredatabricks.net" in workspace:
+        # Azure Databricks
+        return f"https://{workspace}"
+    elif "gcp.databricks.com" in workspace:
+        # GCP Databricks
         return f"https://{workspace}"
     else:
-        # Add default domain
+        # Default to AWS Databricks if no domain specified
         return f"https://{workspace}.cloud.databricks.com"
 
 def validate_credentials(workspace, apikey):

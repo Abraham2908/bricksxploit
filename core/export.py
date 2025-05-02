@@ -5,10 +5,15 @@ Export functionality for BricksXploit
 import json
 import csv
 import os
+import sys
 import datetime
 from rich.console import Console
-from ..utils.storage import export_file
-from ..utils.ui import print_success, print_error, print_info
+
+# Adicionar o diretório raiz ao path para permitir importações absolutas
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from utils.storage import export_file
+from utils.ui import print_success, print_error, print_info
 
 console = Console()
 

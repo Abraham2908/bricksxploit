@@ -420,6 +420,67 @@ def cleanup_history():
             # Ignore errors
             pass
 
+def save_scan_result(data, scan_type, workspace):
+    """
+    Save scan result to history
+
+    Args:
+        data (dict): Scan data
+        scan_type (str): Type of scan
+        workspace (str): Workspace name
+
+    Returns:
+        str: Path to saved file
+    """
+    # Make sure directory exists
+    HISTORY_DIR.mkdir(exist_ok=True)
+
+    # Generate filename
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"{scan_type}_{workspace}_{timestamp}.json"
+    filepath = HISTORY_DIR / filename
+
+    try:
+        # Add metadata
+        data["scan_type"] = scan_type
+        data["workspace"] = workspace
+        data["timestamp"] = timestamp
+
+        # Save to file
+        with open(filepath, "w") as f:
+            json.dump(data, f, indent=4)
+
+        return str(filepath)
+    except Exception as e:
+        console.print(f"[red]Error saving scan result: {e}[/red]")
+        return None
+
+def list_scan_results():
+    """
+    List all scan results in history
+
+    Returns:
+        list: List of scan result metadata
+    """
+    # Make sure directory exists
+    HISTORY_DIR.mkdir(exist_ok=True)
+
+    # Get all scan result files
+    history_files = list(HISTORY_DIR.glob("*.json"))
+    history_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+
+    # Load metadata from each file
+    results = []
+    for file in history_files:
+        try:
+            with open(file, "r") as f:
+                data = json.load(f)
+                results.append(data)
+        except Exception as e:
+            console.print(f"[red]Error loading scan result {file}: {e}[/red]")
+
+    return results
+
 def export_file(data, filename, format="json"):
     """
     Export data to a file
