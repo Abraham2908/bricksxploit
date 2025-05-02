@@ -146,6 +146,9 @@ def profile_menu(_):
                 "Exit"
             ]
             ui.set_menu("Main Menu", main_menu_items)
+            # Display the main menu content before breaking out of the loop
+            ui.add_notification("Returning to main menu...", "INFO")
+            ui.display(Text("Welcome to BricksXploit! Select an option from the menu.", style="cyan"))
             break
 
 def display_profiles():
@@ -435,6 +438,25 @@ def validate_menu(_):
     ui.set_menu("Validate Credentials", ["Back to Main Menu"])
     ui.display(Text("Validate Credentials: Test access to a Databricks workspace.\n\nPlease provide the following information:", style="cyan"), selected_option="7")
 
+    # Add option to return to main menu
+    if ui.confirm("Return to main menu?", default=False):
+        # Define main menu items again to ensure they're displayed correctly
+        main_menu_items = [
+            "Profile Management",
+            "Scan Workspace",
+            "Run SQL Query",
+            "Generate Reports",
+            "View Results",
+            "Configuration",
+            "Validate Credentials",
+            "Exit"
+        ]
+        ui.set_menu("Main Menu", main_menu_items)
+        # Display the main menu content
+        ui.add_notification("Returning to main menu...", "INFO")
+        ui.display(Text("Welcome to BricksXploit! Select an option from the menu.", style="cyan"))
+        return
+
     # Get workspace and API key
     workspace = ui.prompt("Enter workspace (e.g., dbc-xxxx.cloud.databricks.com)")
     apikey = ui.prompt("Enter API key", password=True)
@@ -555,6 +577,21 @@ def config_menu(_):
             scan_settings(_)
         elif choice == "4":
             # Back to main menu
+            # Define main menu items again to ensure they're displayed correctly
+            main_menu_items = [
+                "Profile Management",
+                "Scan Workspace",
+                "Run SQL Query",
+                "Generate Reports",
+                "View Results",
+                "Configuration",
+                "Validate Credentials",
+                "Exit"
+            ]
+            ui.set_menu("Main Menu", main_menu_items)
+            # Display the main menu content before breaking out of the loop
+            ui.add_notification("Returning to main menu...", "INFO")
+            ui.display(Text("Welcome to BricksXploit! Select an option from the menu.", style="cyan"))
             break
 
 def discord_settings(_):
