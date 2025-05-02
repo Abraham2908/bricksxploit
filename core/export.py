@@ -37,7 +37,9 @@ def export_scan_results(scan_results, format="json", output_file=None):
     if not output_file:
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         workspace = scan_results.get("workspace", "unknown")
-        output_file = f"bricksxploit_scan_{workspace}_{timestamp}"
+        # Clean workspace name for filename
+        clean_workspace = workspace.replace("https://", "").replace("http://", "").rstrip("/").replace(":", "_").replace("/", "_")
+        output_file = f"bricksxploit_scan_{clean_workspace}_{timestamp}"
 
     # Export based on format
     if format.lower() == "json":
@@ -269,7 +271,9 @@ def export_report(report_data, format="json", output_file=None):
     if not output_file:
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         workspace = report_data.get("workspace", "unknown")
-        output_file = f"bricksxploit_report_{workspace}_{timestamp}"
+        # Clean workspace name for filename
+        clean_workspace = workspace.replace("https://", "").replace("http://", "").rstrip("/").replace(":", "_").replace("/", "_")
+        output_file = f"bricksxploit_report_{clean_workspace}_{timestamp}"
 
     # Export based on format
     if format.lower() == "json":

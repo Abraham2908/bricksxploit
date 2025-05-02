@@ -420,37 +420,74 @@ def cleanup_history():
             # Ignore errors
             pass
 
-def save_scan_result(data, scan_type, workspace):
+def save_scan_result(data, scan_type, workspace, organization=None):
     """
-    Save scan result to history
+    Save scan result to history and Results directory
 
     Args:
         data (dict): Scan data
         scan_type (str): Type of scan
         workspace (str): Workspace name
+        organization (str, optional): Organization name
 
     Returns:
         str: Path to saved file
     """
-    # Make sure directory exists
+    # Make sure history directory exists
     HISTORY_DIR.mkdir(exist_ok=True)
 
-    # Generate filename
+    # Create Results directory structure
+    results_dir = Path("Results")
+    results_dir.mkdir(exist_ok=True)
+
+    # Get organization from profile if not provided
+    if not organization:
+        config = load_config()
+        organization = config.get("current_organization", "default")
+
+    # Create organization directory
+    org_dir = results_dir / (organization or "default")
+    org_dir.mkdir(exist_ok=True)
+
+    # Clean workspace name for directory
+    clean_workspace = workspace.replace("https://", "").replace("http://", "").rstrip("/")
+    workspace_dir = org_dir / clean_workspace
+    workspace_dir.mkdir(exist_ok=True)
+
+    # Generate timestamp and filenames
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"{scan_type}_{workspace}_{timestamp}.json"
-    filepath = HISTORY_DIR / filename
+
+    # History filename
+    history_filename = f"{scan_type}_{clean_workspace}_{timestamp}.json"
+    history_filepath = HISTORY_DIR / history_filename
+
+    # Results filename
+    results_filename = f"{scan_type}_{timestamp}.json"
+    results_filepath = workspace_dir / results_filename
 
     try:
         # Add metadata
         data["scan_type"] = scan_type
         data["workspace"] = workspace
         data["timestamp"] = timestamp
+        data["organization"] = organization
 
-        # Save to file
-        with open(filepath, "w") as f:
+        # Save to history file
+        with open(history_filepath, "w") as f:
             json.dump(data, f, indent=4)
 
-        return str(filepath)
+        # Save to results directory
+        with open(results_filepath, "w") as f:
+            json.dump(data, f, indent=4)
+
+        # For catalog scans, also save as CSV for easier analysis
+        if scan_type in ["catalogs", "schemas", "tables"]:
+            from core.export import export_csv
+            csv_filename = f"{scan_type}_{timestamp}.csv"
+            csv_filepath = workspace_dir / csv_filename
+            export_csv(data, str(csv_filepath))
+
+        return str(results_filepath)
     except Exception as e:
         console.print(f"[red]Error saving scan result: {e}[/red]")
         return None
@@ -497,9 +534,15 @@ def export_file(data, filename, format="json"):
     export_dir = Path(config.get("export_dir", DEFAULT_CONFIG["export_dir"]))
     export_dir.mkdir(exist_ok=True)
 
+    # Clean filename to avoid invalid characters
+    clean_filename = filename.replace(":", "_").replace("/", "_").replace("\\", "_")
+
+    # Add timestamp and extension if not already present
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"{filename}_{timestamp}.{format}"
-    filepath = export_dir / filename
+    if not clean_filename.endswith(f".{format}"):
+        clean_filename = f"{clean_filename}_{timestamp}.{format}"
+
+    filepath = export_dir / clean_filename
 
     try:
         if format == "json":

@@ -215,8 +215,11 @@ def run_full_scan(workspace, profile_data):
             # Scan complete
             progress.update(scan_task, advance=10, description="Scan complete!")
 
+            # Get organization from profile data
+            organization = profile_data.get("organization")
+
             # Save scan results
-            result_path = save_scan_result(scan_results, "full_scan", workspace)
+            result_path = save_scan_result(scan_results, "full_scan", workspace, organization)
             if result_path:
                 print_success(f"Scan results saved to: {result_path}")
 
@@ -240,6 +243,7 @@ def run_targeted_scan(workspace, profile_data, scan_type):
     """
     try:
         apikey = profile_data.get("apikey")
+        organization = profile_data.get("organization")
 
         if not apikey:
             print_error("API key not found in profile data")
@@ -260,7 +264,8 @@ def run_targeted_scan(workspace, profile_data, scan_type):
             "workspace": workspace,
             "scan_time": datetime.datetime.now().isoformat(),
             "scan_type": scan_type,
-            "user_info": user_info
+            "user_info": user_info,
+            "resources": {}  # Use a consistent resources dictionary
         }
 
         # Run the appropriate scan based on type
@@ -270,64 +275,121 @@ def run_targeted_scan(workspace, profile_data, scan_type):
             if scan_type == "users":
                 users = enumerate_users(workspace, apikey)
                 if users:
-                    scan_results["users"] = users
+                    # Store users in a resources dictionary to maintain consistent structure
+                    scan_results["resources"]["users"] = users
+                    # Also store count for summary display
+                    scan_results["users_count"] = len(users)
 
             elif scan_type == "groups":
                 groups = enumerate_groups(workspace, apikey)
                 if groups:
-                    scan_results["groups"] = groups
+                    scan_results["resources"]["groups"] = groups
+                    scan_results["groups_count"] = len(groups)
 
             elif scan_type == "clusters":
                 clusters = enumerate_clusters(workspace, apikey)
                 if clusters:
-                    scan_results["clusters"] = clusters
+                    scan_results["resources"]["clusters"] = clusters
+                    scan_results["clusters_count"] = len(clusters)
 
             elif scan_type == "jobs":
                 jobs = enumerate_jobs(workspace, apikey)
                 if jobs:
-                    scan_results["jobs"] = jobs
+                    scan_results["resources"]["jobs"] = jobs
+                    scan_results["jobs_count"] = len(jobs)
 
             elif scan_type == "secrets":
                 scopes = enumerate_secret_scopes(workspace, apikey)
                 if scopes:
-                    scan_results["secret_scopes"] = scopes
+                    scan_results["resources"]["secret_scopes"] = scopes
+                    scan_results["secret_scopes_count"] = len(scopes)
 
                     # Scan secrets in each scope
                     secrets_by_scope = {}
+                    total_secrets = 0
                     for scope in scopes:
                         scope_name = scope.get("name")
                         if scope_name:
                             secrets = enumerate_secrets(workspace, apikey, scope_name)
                             if secrets:
                                 secrets_by_scope[scope_name] = secrets
+                                total_secrets += len(secrets)
 
                     if secrets_by_scope:
-                        scan_results["secrets"] = secrets_by_scope
+                        scan_results["resources"]["secrets"] = secrets_by_scope
+                        scan_results["secrets_count"] = total_secrets
 
             elif scan_type == "warehouses":
                 warehouses = enumerate_warehouses(workspace, apikey)
                 if warehouses:
-                    scan_results["warehouses"] = warehouses
+                    scan_results["resources"]["warehouses"] = warehouses
+                    scan_results["warehouses_count"] = len(warehouses)
 
             elif scan_type == "catalogs":
                 catalogs = get_catalogs(workspace, apikey)
                 if catalogs:
-                    scan_results["catalogs"] = catalogs
+                    scan_results["resources"]["catalogs"] = catalogs
+                    scan_results["catalogs_count"] = len(catalogs)
+
+                    # For catalogs, only sample a limited number to avoid excessive API calls
+                    sample_catalogs = catalogs[:2] if len(catalogs) > 2 else catalogs
+
+                    # Store the full list but mark that we're only sampling for schemas/tables
+                    scan_results["sample_note"] = "Only a sample of schemas and tables are shown for demonstration. Use the 'exploit' feature for complete data extraction."
+
+                    # Sample schemas from selected catalogs
+                    schemas_by_catalog = {}
+                    total_schemas = 0
+
+                    for catalog in sample_catalogs:
+                        catalog_name = catalog.get("name")
+                        if catalog_name:
+                            schemas = get_schemas(workspace, apikey, catalog_name)
+                            if schemas:
+                                # Only keep a sample of schemas
+                                sample_schemas = schemas[:3] if len(schemas) > 3 else schemas
+                                schemas_by_catalog[catalog_name] = sample_schemas
+                                total_schemas += len(schemas)  # Store total count, not just sample
+
+                                # Sample tables from selected schemas
+                                tables_by_schema = {}
+                                total_tables = 0
+
+                                for schema in sample_schemas[:1]:  # Only sample first schema
+                                    schema_name = schema.get("name")
+                                    if schema_name:
+                                        tables = get_tables(workspace, apikey, catalog_name, schema_name)
+                                        if tables:
+                                            # Only keep a sample of tables
+                                            sample_tables = tables[:5] if len(tables) > 5 else tables
+                                            tables_by_schema[f"{catalog_name}.{schema_name}"] = sample_tables
+                                            total_tables += len(tables)  # Store total count, not just sample
+
+                    if schemas_by_catalog:
+                        scan_results["resources"]["schemas"] = schemas_by_catalog
+                        scan_results["schemas_count"] = total_schemas
+
+                    if tables_by_schema:
+                        scan_results["resources"]["tables"] = tables_by_schema
+                        scan_results["tables_count"] = total_tables
 
             elif scan_type == "external_locations":
                 locations = enumerate_external_locations(workspace, apikey)
                 if locations:
-                    scan_results["external_locations"] = locations
+                    scan_results["resources"]["external_locations"] = locations
+                    scan_results["external_locations_count"] = len(locations)
 
             elif scan_type == "tokens":
                 tokens = enumerate_tokens(workspace, apikey)
                 if tokens:
-                    scan_results["tokens"] = tokens
+                    scan_results["resources"]["tokens"] = tokens
+                    scan_results["tokens_count"] = len(tokens)
 
             elif scan_type == "instance_pools":
                 pools = enumerate_instance_pools(workspace, apikey)
                 if pools:
-                    scan_results["instance_pools"] = pools
+                    scan_results["resources"]["instance_pools"] = pools
+                    scan_results["instance_pools_count"] = len(pools)
 
             else:
                 print_error(f"Unknown scan type: {scan_type}")
@@ -336,7 +398,7 @@ def run_targeted_scan(workspace, profile_data, scan_type):
             progress.update(task, completed=True)
 
         # Save scan results
-        result_path = save_scan_result(scan_results, scan_type, workspace)
+        result_path = save_scan_result(scan_results, scan_type, workspace, organization)
         if result_path:
             print_success(f"Scan results saved to: {result_path}")
 
@@ -401,7 +463,10 @@ def run_sql_query(workspace, profile_data, query, warehouse_id=None, catalog=Non
             "result": result
         }
 
-        result_path = save_scan_result(query_results, "sql_query", workspace)
+        # Get organization from profile data
+        organization = profile_data.get("organization")
+
+        result_path = save_scan_result(query_results, "sql_query", workspace, organization)
         if result_path:
             print_success(f"Query results saved to: {result_path}")
 
@@ -411,12 +476,13 @@ def run_sql_query(workspace, profile_data, query, warehouse_id=None, catalog=Non
         print_error(f"Error executing SQL query: {e}")
         return None
 
-def display_scan_summary(scan_results):
+def display_scan_summary(scan_results, scan_type=None):
     """
     Display a summary of scan results
 
     Args:
         scan_results (dict): Scan results
+        scan_type (str, optional): Type of scan
     """
     if not scan_results:
         print_error("No scan results to display.")
@@ -424,31 +490,58 @@ def display_scan_summary(scan_results):
 
     workspace = scan_results.get("workspace", "Unknown")
     scan_time = scan_results.get("scan_time", "Unknown")
+    scan_type_display = scan_type or scan_results.get("scan_type", "Unknown")
 
     # Create a summary panel
     summary_text = f"""
 Workspace: [bold cyan]{workspace}[/bold cyan]
 Scan Time: [bold cyan]{scan_time}[/bold cyan]
+Scan Type: [bold cyan]{scan_type_display}[/bold cyan]
 
 [bold green]Resources Found:[/bold green]
 """
 
-    # Add resource counts
-    resources = scan_results.get("resources", {})
-    for resource_type, resource_data in resources.items():
-        if resource_type == "secrets":
-            # Special handling for secrets
-            scope_count = len(resource_data)
-            secret_count = sum(len(secrets) for secrets in resource_data.values())
-            summary_text += f"• [bold blue]{resource_type.replace('_', ' ').title()}:[/bold blue] {scope_count} scopes, {secret_count} secrets\n"
-        elif resource_type == "acls":
-            # Special handling for ACLs
-            acl_count = sum(len(acls) for acl_type in resource_data.values() for acls in acl_type.values())
-            summary_text += f"• [bold blue]{resource_type.upper()}:[/bold blue] {acl_count} entries\n"
-        elif isinstance(resource_data, list):
-            summary_text += f"• [bold blue]{resource_type.replace('_', ' ').title()}:[/bold blue] {len(resource_data)}\n"
-        elif isinstance(resource_data, dict):
-            summary_text += f"• [bold blue]{resource_type.replace('_', ' ').title()}:[/bold blue] {len(resource_data)}\n"
+    # Check for sample note
+    if "sample_note" in scan_results:
+        summary_text += f"\n[italic yellow]{scan_results['sample_note']}[/italic yellow]\n\n"
+
+    # First check for direct count fields
+    for key in scan_results:
+        if key.endswith("_count"):
+            resource_type = key.replace("_count", "")
+            summary_text += f"• [bold blue]{resource_type.replace('_', ' ').title()}:[/bold blue] {scan_results[key]}\n"
+
+    # If no direct counts, use resources dictionary
+    if not any(key.endswith("_count") for key in scan_results):
+        resources = scan_results.get("resources", {})
+        for resource_type, resource_data in resources.items():
+            if resource_type == "secrets":
+                # Special handling for secrets
+                scope_count = len(resource_data)
+                secret_count = sum(len(secrets) for secrets in resource_data.values())
+                summary_text += f"• [bold blue]{resource_type.replace('_', ' ').title()}:[/bold blue] {scope_count} scopes, {secret_count} secrets\n"
+            elif resource_type == "acls":
+                # Special handling for ACLs
+                acl_count = sum(len(acls) for acl_type in resource_data.values() for acls in acl_type.values())
+                summary_text += f"• [bold blue]{resource_type.upper()}:[/bold blue] {acl_count} entries\n"
+            elif resource_type == "schemas":
+                # Special handling for schemas which might be nested by catalog
+                if isinstance(resource_data, dict):
+                    schema_count = sum(len(schemas) for schemas in resource_data.values())
+                    summary_text += f"• [bold blue]{resource_type.replace('_', ' ').title()}:[/bold blue] {schema_count}\n"
+                else:
+                    summary_text += f"• [bold blue]{resource_type.replace('_', ' ').title()}:[/bold blue] {len(resource_data)}\n"
+            elif resource_type == "tables":
+                # Special handling for tables which might be nested by schema
+                if isinstance(resource_data, dict):
+                    table_count = sum(len(tables) for tables in resource_data.values())
+                    summary_text += f"• [bold blue]{resource_type.replace('_', ' ').title()}:[/bold blue] {table_count}\n"
+                else:
+                    summary_text += f"• [bold blue]{resource_type.replace('_', ' ').title()}:[/bold blue] {len(resource_data)}\n"
+            elif isinstance(resource_data, list):
+                summary_text += f"• [bold blue]{resource_type.replace('_', ' ').title()}:[/bold blue] {len(resource_data)}\n"
+            elif isinstance(resource_data, dict):
+                summary_text += f"• [bold blue]{resource_type.replace('_', ' ').title()}:[/bold blue] {len(resource_data)}\n"
 
     # Create and display the panel
     panel = Panel(
