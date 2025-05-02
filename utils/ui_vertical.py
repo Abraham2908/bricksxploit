@@ -12,7 +12,6 @@ from rich.text import Text
 from rich.box import ROUNDED
 from rich.prompt import Prompt, Confirm
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
-from rich.align import Align
 
 class VerticalUI:
     """
@@ -58,14 +57,26 @@ class VerticalUI:
 
     def draw_header(self):
         """
-        Draw the header
+        Draw the header with the banner from banner.py
         """
+        from utils.banner import SMALL_BANNER, __version__, TAGLINES
+        import random
+
+        # Get a random tagline
+        tagline = random.choice(TAGLINES)
+
+        # Create the banner text
+        banner_text = Text(SMALL_BANNER, style=f"bold {self.colors['primary']}")
+
+        # Create the panel
         self.console.print(Panel(
-            Align.center(f"{self.title} v{self.version}"),
-            style=f"bold {self.colors['primary']}",
+            banner_text,
+            title=f"[bold yellow]{self.title} v{self.version}[/bold yellow]",
+            subtitle=f"[bold green]{tagline}[/bold green]",
+            style="white",
             border_style=self.colors['primary'],
             width=self.terminal_width,
-            padding=(0, 0)
+            padding=(0, 1)
         ))
 
     def draw_footer(self, selected_option=None):

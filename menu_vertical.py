@@ -6,8 +6,6 @@ import time
 import sys
 import os
 from rich.text import Text
-from rich.panel import Panel
-from rich.align import Align
 
 # Configurar o ambiente para importações
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -15,9 +13,9 @@ sys.path.insert(0, current_dir)
 
 # Importações absolutas
 from core.auth import validate_credentials
-from core.profiles import list_profiles, switch_profile, add_new_profile, remove_profile
+from core.profiles import list_profiles, switch_profile, add_new_profile
 from core.report import validate_and_notify
-from utils.storage import load_config, save_config, get_webhook_url, set_webhook_url
+from utils.storage import save_config, get_webhook_url, set_webhook_url
 from utils.storage import get_current_profile
 from utils.ui_vertical import VerticalUI
 
@@ -27,7 +25,7 @@ ui = VerticalUI(title="BricksXploit", version="1.0.0")
 def show_menu(config):
     """
     Display the main menu
-    
+
     Args:
         config (dict): Application configuration
     """
@@ -42,26 +40,26 @@ def show_menu(config):
         "Validate Credentials",
         "Exit"
     ]
-    
+
     ui.set_menu("Main Menu", menu_items)
-    
+
     # Set active profile if exists
     org, profile_name, _ = get_current_profile()
     if profile_name:
         ui.set_active_profile(profile_name, org)
-    
+
     # Add welcome notification
     ui.add_notification("Welcome to BricksXploit!", "INFO")
     ui.add_notification("Select an option from the menu", "INFO")
-    
+
     # Display the UI
     ui.display(Text("Welcome to BricksXploit! Select an option from the menu.", style="cyan"))
-    
+
     # Main menu loop
     while True:
         # Get user choice
         choice = ui.prompt("Select an option", choices=["1", "2", "3", "4", "5", "6", "7", "8"], default="1")
-        
+
         if choice == "1":
             # Profile management
             profile_menu(config)
@@ -93,13 +91,13 @@ def show_menu(config):
             ui.display(Text("Exiting BricksXploit. Goodbye!", style="cyan"), selected_option="8")
             time.sleep(1.0)
             sys.exit(0)
-            
-def profile_menu(config):
+
+def profile_menu(_):
     """
     Display the profile management menu
-    
+
     Args:
-        config (dict): Application configuration
+        _ (dict): Application configuration (not used)
     """
     # Define profile menu items
     menu_items = [
@@ -110,15 +108,15 @@ def profile_menu(config):
         "View Current Profile",
         "Back to Main Menu"
     ]
-    
+
     ui.set_menu("Profile Management", menu_items)
     ui.display(Text("Profile Management: Manage Databricks workspace profiles.", style="cyan"))
-    
+
     # Profile menu loop
     while True:
         # Get user choice
         choice = ui.prompt("Select an option", choices=["1", "2", "3", "4", "5", "6"], default="1")
-        
+
         if choice == "1":
             # List profiles
             display_profiles()
@@ -136,8 +134,20 @@ def profile_menu(config):
             view_current_profile()
         elif choice == "6":
             # Back to main menu
+            # Define main menu items again to ensure they're displayed correctly
+            main_menu_items = [
+                "Profile Management",
+                "Scan Workspace",
+                "Run SQL Query",
+                "Generate Reports",
+                "View Results",
+                "Configuration",
+                "Validate Credentials",
+                "Exit"
+            ]
+            ui.set_menu("Main Menu", main_menu_items)
             break
-            
+
 def display_profiles():
     """
     Display all profiles in a table
@@ -241,11 +251,11 @@ def add_profile_ui():
     """
     # Display form instructions
     ui.display(Text("Add Profile: Add a new Databricks workspace profile.\n\nPlease provide the following information:", style="cyan"), selected_option="3")
-    
+
     # Get profile information
     workspace = ui.prompt("Enter workspace (e.g., dbc-xxxx.cloud.databricks.com)")
     apikey = ui.prompt("Enter API key", password=True)
-    
+
     # Ask for a friendly profile name (different from workspace URL)
     profile_name = ui.prompt("Enter profile name (leave empty to use workspace URL)", default="")
     organization = ui.prompt("Enter organization name (optional)", default="")
@@ -278,10 +288,10 @@ def add_profile_ui():
 
         # Save the profile
         ui.add_notification(f"Saving profile: {final_profile_name}...", "INFO")
-        
+
         try:
             # Pass the user_info to avoid re-validation
-            success = ui.run_with_spinner(f"Saving profile {final_profile_name}...", 
+            success = ui.run_with_spinner(f"Saving profile {final_profile_name}...",
                                          add_new_profile,
                                          workspace,
                                          apikey,
@@ -350,7 +360,16 @@ def remove_profile_ui():
 
     if confirm:
         ui.add_notification(f"Removing profile: {display_name}...", "INFO")
-        success = ui.run_with_spinner(f"Removing profile {display_name}...", remove_profile, org_name, profile_name)
+
+        # Import the storage function directly to avoid confusion with the profiles module function
+        from utils.storage import remove_profile as remove_profile_storage
+
+        success = ui.run_with_spinner(
+            f"Removing profile {display_name}...",
+            remove_profile_storage,
+            profile_name,
+            org_name
+        )
 
         if success:
             ui.add_notification(f"Profile removed: {display_name}", "SUCCESS")
@@ -405,13 +424,13 @@ def view_current_profile():
     # Update the UI with the table
     ui.display(table, selected_option="5")
     ui.add_notification(f"Viewing profile: {profile_name}", "INFO")
-    
-def validate_menu(config):
+
+def validate_menu(_):
     """
     Validate credentials for a Databricks workspace
 
     Args:
-        config (dict): Application configuration
+        _ (dict): Application configuration (not used)
     """
     ui.set_menu("Validate Credentials", ["Back to Main Menu"])
     ui.display(Text("Validate Credentials: Test access to a Databricks workspace.\n\nPlease provide the following information:", style="cyan"), selected_option="7")
@@ -457,7 +476,7 @@ def validate_menu(config):
 
             try:
                 # Pass the user_info to avoid re-validation
-                success = ui.run_with_spinner(f"Saving profile {final_profile_name}...", 
+                success = ui.run_with_spinner(f"Saving profile {final_profile_name}...",
                                              add_new_profile,
                                              workspace,
                                              apikey,
@@ -482,7 +501,7 @@ def validate_menu(config):
 
             if webhook_url:
                 ui.add_notification("Sending notification to Discord...", "INFO")
-                success = ui.run_with_spinner("Sending notification to Discord...", 
+                success = ui.run_with_spinner("Sending notification to Discord...",
                                              validate_and_notify,
                                              workspace,
                                              apikey,
@@ -501,13 +520,13 @@ def validate_menu(config):
     else:
         ui.add_notification("Invalid credentials or workspace not accessible.", "ERROR")
         ui.display(Text("Failed to validate credentials. Please try again.", style="red"), selected_option="7")
-        
-def config_menu(config):
+
+def config_menu(_):
     """
     Display the configuration menu
 
     Args:
-        config (dict): Application configuration
+        _ (dict): Application configuration (not used)
     """
     # Define configuration menu items
     menu_items = [
@@ -527,23 +546,23 @@ def config_menu(config):
 
         if choice == "1":
             # Discord settings
-            discord_settings(config)
+            discord_settings(_)
         elif choice == "2":
             # Display settings
-            display_settings(config)
+            display_settings(_)
         elif choice == "3":
             # Scan settings
-            scan_settings(config)
+            scan_settings(_)
         elif choice == "4":
             # Back to main menu
             break
-            
-def discord_settings(config):
+
+def discord_settings(_):
     """
     Configure Discord webhook settings
 
     Args:
-        config (dict): Application configuration
+        _ (dict): Application configuration (not used)
     """
     # Get current webhook URL
     current_webhook = get_webhook_url()
@@ -573,14 +592,18 @@ def discord_settings(config):
                 ui.display(Text("Failed to update Discord webhook URL.", style="red"), selected_option="1")
         else:
             ui.add_notification("Discord webhook URL not updated.", "INFO")
-        
-def display_settings(config):
+
+def display_settings(_):
     """
     Configure display settings
 
     Args:
-        config (dict): Application configuration
+        _ (dict): Application configuration (not used)
     """
+    # Load config
+    from utils.storage import load_config
+    config = load_config()
+
     # Get current display settings
     current_settings = config.get("display", {})
 
@@ -616,14 +639,18 @@ def display_settings(config):
         else:
             ui.add_notification("Failed to update display settings.", "ERROR")
             ui.display(Text("Failed to update display settings.", style="red"), selected_option="2")
-        
-def scan_settings(config):
+
+def scan_settings(_):
     """
     Configure scan settings
 
     Args:
-        config (dict): Application configuration
+        _ (dict): Application configuration (not used)
     """
+    # Load config
+    from utils.storage import load_config
+    config = load_config()
+
     # Get current scan settings
     current_settings = config.get("scan", {})
 
