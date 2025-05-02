@@ -68,8 +68,12 @@ def export_json(data, output_file):
     try:
         export_path = export_file(data, output_file, "json")
         if export_path:
-            print_success(f"Data exported to JSON: {export_path}")
-            return export_path
+            # Return a dictionary with success message and path for better UI formatting
+            return {
+                "success": True,
+                "path": export_path,
+                "message": f"SUCCESS: Data exported to JSON: {export_path}"
+            }
         else:
             print_error("Failed to export data to JSON.")
             return None
@@ -111,8 +115,12 @@ def export_csv(data, output_file):
             for row in flattened_data:
                 writer.writerow(row)
 
-        print_success(f"Data exported to CSV: {output_file}")
-        return output_file
+        # Return a dictionary with success message and path for better UI formatting
+        return {
+            "success": True,
+            "path": output_file,
+            "message": f"SUCCESS: Data exported to CSV: {output_file}"
+        }
     except Exception as e:
         print_error(f"Error exporting to CSV: {e}")
         return None

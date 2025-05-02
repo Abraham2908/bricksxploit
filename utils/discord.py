@@ -4,10 +4,32 @@ Discord notification utilities for BricksXploit
 
 import requests
 import datetime
+import base64
+import os
 from rich.console import Console
 from .storage import load_config, update_config
 
 console = Console()
+
+# Path to the banner image
+BANNER_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "banner.txt")
+
+def get_banner_data():
+    """
+    Get the banner data as a base64 encoded string
+
+    Returns:
+        str: Base64 encoded banner data or None if not found
+    """
+    try:
+        # Check if we have a banner.png file in the assets directory
+        banner_png = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "banner.png")
+        if os.path.exists(banner_png):
+            with open(banner_png, "rb") as f:
+                return base64.b64encode(f.read()).decode("utf-8")
+        return None
+    except Exception:
+        return None
 
 def get_webhook_url():
     """
@@ -76,6 +98,28 @@ def send_discord_notification(data, notification_type="report", title=None, mess
             }
         ]
     }
+
+    # Try to add banner image if available
+    banner_data = get_banner_data()
+    if banner_data:
+        # Add image to the first embed
+        payload["embeds"][0]["image"] = {
+            "url": f"data:image/png;base64,{banner_data}"
+        }
+    else:
+        # If no banner image, try to add ASCII banner from text file
+        try:
+            if os.path.exists(BANNER_PATH):
+                with open(BANNER_PATH, "r") as f:
+                    banner_text = f.read()
+                    # Add banner as a code block at the beginning of the message
+                    if message:
+                        message = f"```\n{banner_text}\n```\n\n{message}"
+                    else:
+                        message = f"```\n{banner_text}\n```"
+        except Exception:
+            # If banner can't be added, continue without it
+            pass
 
     # Add custom message if provided
     if message:
@@ -306,8 +350,9 @@ def send_scan_notification(report_data, file_path=None):
     workspace = report_data.get("workspace", "Unknown")
     scan_time = report_data.get("timestamp", "Unknown")
 
-    # Create a more detailed message
-    message = f"BricksXploit completed a security scan for `{workspace}`\n"
+    # Create a more detailed message with better formatting
+    message = f"# BricksXploit Security Scan Report\n\n"
+    message += f"## Workspace: `{workspace}`\n\n"
 
     # Add scan type if available
     scan_type = "Unknown"
@@ -328,36 +373,84 @@ def send_scan_notification(report_data, file_path=None):
             scan_type = "Full Workspace"
 
     message += f"**Scan Type:** {scan_type}\n"
+    message += f"**Scan Time:** {scan_time}\n"
 
     # Add file information if available
     if file_path:
-        message += f"**Report saved to:** `{file_path}`\n"
+        message += f"**Report File:** `{file_path}`\n\n"
+    else:
+        message += "\n"
 
-    # Add timestamp
-    message += f"**Scan Time:** {scan_time}\n"
-
-    # Add summary counts
+    # Add summary counts in a more organized format
     resources = report_data.get("resources", {})
     if resources:
-        message += "\n**Resource Counts:**\n"
+        message += "## Resource Summary\n\n"
+
+        # Create a table-like format for resource counts
+        message += "| Resource Type | Count |\n"
+        message += "|---------------|-------|\n"
 
         # Add users and groups
         if "users" in resources:
-            message += f"• Users: {len(resources['users'])}\n"
+            message += f"| Users | {len(resources['users'])} |\n"
         if "groups" in resources:
-            message += f"• Groups: {len(resources['groups'])}\n"
+            message += f"| Groups | {len(resources['groups'])} |\n"
 
         # Add catalogs and schemas
         if "catalogs" in resources:
-            message += f"• Catalogs: {len(resources['catalogs'])}\n"
+            message += f"| Catalogs | {len(resources['catalogs'])} |\n"
+        if "schemas" in resources:
+            message += f"| Schemas | {len(resources['schemas'])} |\n"
 
         # Add secret scopes
         if "secret_scopes" in resources:
-            message += f"• Secret Scopes: {len(resources['secret_scopes'])}\n"
+            message += f"| Secret Scopes | {len(resources['secret_scopes'])} |\n"
 
         # Add SQL warehouses
         if "warehouses" in resources:
-            message += f"• SQL Warehouses: {len(resources['warehouses'])}\n"
+            message += f"| SQL Warehouses | {len(resources['warehouses'])} |\n"
+
+        message += "\n"
+
+        # Add sample data for each resource type
+        if "users" in resources and resources["users"]:
+            message += "## Sample Users\n\n"
+            sample_users = resources["users"][:5]
+            for user in sample_users:
+                if isinstance(user, dict):
+                    message += f"- {user.get('display_name', 'Unknown')} ({user.get('user_name', 'Unknown')})\n"
+                else:
+                    # Handle different user object formats
+                    try:
+                        message += f"- {getattr(user, 'display_name', 'Unknown')} ({getattr(user, 'user_name', 'Unknown')})\n"
+                    except:
+                        message += f"- {str(user)}\n"
+
+            if len(resources["users"]) > 5:
+                message += f"... and {len(resources['users']) - 5} more users\n"
+            message += "\n"
+
+        # Add sample catalogs if available
+        if "catalogs" in resources and resources["catalogs"]:
+            message += "## Sample Catalogs\n\n"
+            sample_catalogs = resources["catalogs"][:5]
+            for catalog in sample_catalogs:
+                if isinstance(catalog, dict):
+                    message += f"- {catalog.get('name', 'Unknown')}\n"
+                else:
+                    # Handle different catalog object formats
+                    try:
+                        message += f"- {getattr(catalog, 'name', 'Unknown')}\n"
+                    except:
+                        message += f"- {str(catalog)}\n"
+
+            if len(resources["catalogs"]) > 5:
+                message += f"... and {len(resources['catalogs']) - 5} more catalogs\n"
+            message += "\n"
+
+    # Add a footer with tool information
+    message += "---\n"
+    message += "*Generated by BricksXploit - Databricks Security Testing Tool*"
 
     return send_discord_notification(
         report_data,

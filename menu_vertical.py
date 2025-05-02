@@ -1034,16 +1034,21 @@ def run_workspace_scan(scan_type):
             )
 
             # Export the results
-            export_path = ui.run_with_spinner(
+            export_result = ui.run_with_spinner(
                 f"Exporting scan results to {export_format.upper()}...",
                 export_scan_results,
                 scan_results,
                 export_format
             )
 
-            if export_path:
-                ui.add_notification(f"Scan results exported to: {export_path}", "SUCCESS")
-                ui.add_notification(f"File saved at: {export_path}", "INFO")
+            if export_result and isinstance(export_result, dict) and export_result.get("success"):
+                # Get the path from the result
+                export_path = export_result.get("path")
+                # Add notification with the message from the result
+                if "message" in export_result:
+                    ui.add_notification(export_result["message"], "SUCCESS")
+                else:
+                    ui.add_notification(f"Scan results exported to: {export_path}", "SUCCESS")
             else:
                 ui.add_notification("Failed to export scan results.", "ERROR")
                 export_path = None  # Ensure it's None if export failed
@@ -1067,7 +1072,7 @@ def run_workspace_scan(scan_type):
                 )
 
                 if success:
-                    ui.add_notification("Scan results sent to Discord successfully.", "SUCCESS")
+                    ui.add_notification("Notification sent to Discord successfully!", "SUCCESS")
                     if export_path:
                         ui.add_notification("File path included in Discord notification.", "INFO")
                 else:

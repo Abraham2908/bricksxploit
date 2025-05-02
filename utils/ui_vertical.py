@@ -167,17 +167,100 @@ class VerticalUI:
         header_footer_space = 8  # Space taken by header, footer, and prompt
         content_height = min(15, max(10, effective_height - header_footer_space))  # Limit maximum height
 
-        # Format content panel
-        content_panel = Panel(
-            content,
-            title=f"— {self.menu_title.upper()} —",
-            title_align="center",
-            style="white",
-            border_style=self.colors['primary'],
-            width=content_width,
-            height=content_height,
-            padding=(0, 1)  # Minimal padding for smaller terminals
-        )
+        # Wrap content in a panel with scrollable content
+        # Check if content is a Table or other renderable that might need scrolling
+        if hasattr(content, 'row_count') and hasattr(content, 'rows'):
+            # For tables, we'll implement a custom scrolling mechanism
+            # First, check if the table has more rows than can fit in the panel
+            visible_rows = content_height - 4  # Account for panel borders and padding
+
+            # If table has more rows than can be displayed, create a cropped version
+            if content.row_count > visible_rows and hasattr(content, 'rows'):
+                # Create a copy of the table with only visible rows
+
+                # Create a new table with the same properties
+                from rich.table import Table
+                cropped_table = Table(
+                    title=content.title,
+                    caption=content.caption,
+                    box=content.box,
+                    safe_box=content.safe_box,
+                    padding=content.padding,
+                    collapse_padding=content.collapse_padding,
+                    show_header=content.show_header,
+                    show_footer=content.show_footer,
+                    show_edge=content.show_edge,
+                    show_lines=content.show_lines,
+                    leading=content.leading,
+                    style=content.style,
+                    row_styles=content.row_styles,
+                    header_style=content.header_style,
+                    footer_style=content.footer_style,
+                    border_style=content.border_style,
+                    expand=content.expand,
+                    width=content.width,
+                )
+
+                # Add columns to the new table
+                for column in content.columns:
+                    cropped_table.add_column(
+                        header=column.header,
+                        footer=column.footer,
+                        header_style=column.header_style,
+                        footer_style=column.footer_style,
+                        style=column.style,
+                        justify=column.justify,
+                        vertical=column.vertical,
+                        width=column.width,
+                        min_width=column.min_width,
+                        max_width=column.max_width,
+                        ratio=column.ratio,
+                        no_wrap=column.no_wrap
+                    )
+
+                # Add only the visible rows to the new table
+                for i, row in enumerate(content.rows):
+                    if i < visible_rows:
+                        # Add the row to the cropped table
+                        if isinstance(row, tuple):
+                            cropped_table.add_row(*row)
+                        elif hasattr(row, 'cells'):
+                            cropped_table.add_row(*row.cells)
+
+                # Add a note about scrolling if there are more rows
+                if content.row_count > visible_rows:
+                    note = f"\n[dim italic]Showing {visible_rows} of {content.row_count} rows. Use arrow keys to scroll.[/dim italic]"
+                    cropped_table.caption = note
+
+                # Use the cropped table as content
+                content_to_display = cropped_table
+            else:
+                # Table fits in the panel, use it as is
+                content_to_display = content
+
+            # Create the panel with the table
+            content_panel = Panel(
+                content_to_display,
+                title=f"— {self.menu_title.upper()} —",
+                title_align="center",
+                style="white",
+                border_style=self.colors['primary'],
+                width=content_width,
+                height=content_height,
+                padding=(0, 1)  # Minimal padding for smaller terminals
+            )
+        else:
+            # For other content types
+            content_panel = Panel(
+                content,
+                title=f"— {self.menu_title.upper()} —",
+                title_align="center",
+                style="white",
+                border_style=self.colors['primary'],
+                width=content_width,
+                height=content_height,
+                padding=(0, 1)  # Minimal padding for smaller terminals
+            )
 
         # Format notifications panel
         notifications_panel = self.create_notifications_panel(notifications_width, content_height)
@@ -240,12 +323,31 @@ class VerticalUI:
                 # Handle message with proper wrapping for long messages
                 max_message_length = width - 15  # Allow space for level and timestamp
 
+                # Check for natural line breaks in the message
+                if "\n" in message:
+                    # Split message by line breaks
+                    lines = message.split("\n")
+                    # Add first line
+                    notifications_content.append(lines[0], style="white")
+
+                    # Add remaining lines with proper indentation
+                    for i, line in enumerate(lines[1:]):
+                        if i < 2:  # Limit to 2 additional lines to avoid cluttering
+                            notifications_content.append("\n    ")  # Indent continuation
+                            # Truncate line if too long
+                            if len(line) > max_message_length - 5:
+                                line = line[:max_message_length-8] + "..."
+                            notifications_content.append(line, style="white dim")
+                        else:
+                            # Indicate more lines were omitted
+                            notifications_content.append("\n    ...")
+                            break
                 # If message is too long, wrap it nicely
-                if len(message) > max_message_length:
+                elif len(message) > max_message_length:
                     # Add first line
                     notifications_content.append(f"{message[:max_message_length-3]}...", style="white")
 
-                    # For important messages (ERROR, WARNING), show continuation on next line
+                    # For important messages (ERROR, WARNING, SUCCESS), show continuation on next line
                     if level in ["ERROR", "WARNING", "SUCCESS"]:
                         # Only add continuation for longer messages
                         if len(message) > max_message_length + 20:
@@ -400,7 +502,7 @@ class VerticalUI:
         Returns:
             Any: Result of the function
         """
-        # Create spinner
+        # Create spinner with better formatting
         progress = Progress(
             SpinnerColumn(),
             TextColumn(f"[{self.colors['primary']}]{{task.description}}"),
@@ -418,14 +520,24 @@ class VerticalUI:
             # Run function
             result = func(*args, **kwargs)
 
-            # Update spinner
-            progress.update(task_id, description=f"{message} [green]Done![/green]")
+            # Get any success message from the result if it's a dict with a message
+            success_message = ""
+            if isinstance(result, dict) and "message" in result:
+                success_message = f"\n{result['message']}"
+
+            # Update spinner with proper line breaks
+            progress.update(task_id, description=f"{message} [green]Done![/green]{success_message}")
             time.sleep(0.5)
 
             return result
         except Exception as e:
+            # Format error message with proper line breaks
+            error_message = str(e)
+            if len(error_message) > 50:  # If error message is long
+                error_message = f"\n{error_message}"
+
             # Update spinner
-            progress.update(task_id, description=f"{message} [red]Failed![/red]")
+            progress.update(task_id, description=f"{message} [red]Failed![/red] {error_message}")
             time.sleep(0.5)
 
             # Add notification
